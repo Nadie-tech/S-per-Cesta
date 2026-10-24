@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#087b4e">
+  <meta name="description" content="Súper Cesta: compara precios, organiza tu compra y controla tu presupuesto.">
+  <title>Súper Cesta - Tu compra bajo control</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <section id="welcome-screen" class="welcome-screen" aria-labelledby="welcome-title">
+    <div class="welcome-brand">
+      <img class="welcome-logo" src="super-cesta-mark.svg" alt="" aria-hidden="true">
+      <p class="welcome-kicker">TU COMPRA, MÁS CLARA</p>
+      <h1 id="welcome-title"><span class="word-super">Súper</span><br><span class="word-cesta">Cesta</span></h1>
+      <p class="welcome-copy">Compara, planifica y compra con cabeza.</p>
+      <button id="enter-app" class="welcome-button" type="button">Entrar a la app <span aria-hidden="true">→</span></button>
+    </div>
+    <span class="welcome-orbit orbit-one" aria-hidden="true"></span>
+    <span class="welcome-orbit orbit-two" aria-hidden="true"></span>
+  </section>
+
+  <div id="app-shell" hidden>
+  <header class="top">
+    <a class="brand" href="#inicio" aria-label="Súper Cesta, inicio">
+      <img class="logo" src="super-cesta-mark.svg" alt="" aria-hidden="true">
+      <span>
+        <span class="brand-name"><span class="brand-super">Súper</span> <span class="brand-cesta">Cesta</span></span>
+        <span class="brand-tagline">Tu compra, bajo control.</span>
+      </span>
+    </a>
+    <span class="free-label"><span aria-hidden="true"></span> GRATIS</span>
+    <button id="menu-toggle" class="menu-toggle" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="app-menu">
+      <span></span><span></span><span></span>
+    </button>
+    <nav id="app-menu" class="app-menu" aria-label="Secciones" hidden>
+      <button type="button" data-view="basket">Mi cesta</button>
+      <button type="button" data-view="forum">Foro de precios</button>
+      <button type="button" data-view="policies">Privacidad y políticas</button>
+    </nav>
+  </header>
+
+  <main id="basket-view" class="page-view">
+    <section class="budget-card" aria-labelledby="budget-heading">
+      <div class="budget-topline">
+        <p class="eyebrow" id="budget-heading">PRESUPUESTO DE TU COMPRA</p>
+        <span class="budget-mark" aria-hidden="true">01 / 02</span>
+      </div>
+      <label for="budget">¿Cuánto puedes gastar?</label>
+      <div class="budget-input">
+        <span aria-hidden="true">€</span>
+        <input id="budget" type="number" min="0" step="0.01" value="50" inputmode="decimal" aria-describedby="budget-message">
+      </div>
+
+      <div class="totals" aria-live="polite">
+        <div>
+          <span class="muted">Total de la cesta</span>
+          <strong id="total">0,00&nbsp;€</strong>
+        </div>
+        <div class="remaining">
+          <span class="muted">Te queda</span>
+          <strong id="remaining">50,00&nbsp;€</strong>
+        </div>
+      </div>
+
+      <div class="progress" role="progressbar" aria-label="Presupuesto utilizado" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div id="progress-bar"></div>
+      </div>
+      <p id="budget-message" class="budget-message" aria-live="polite">Tu compra está dentro del presupuesto.</p>
+    </section>
+
+    <section class="section camera-section" aria-labelledby="camera-heading">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">IDENTIFICACIÓN CON IA</p>
+          <h2 id="camera-heading">Escanear producto</h2>
+        </div>
+        <span class="step" aria-hidden="true">IA</span>
+      </div>
+      <p class="muted">La cámara solo se activa tras tu confirmación. La foto se envía a Gemini únicamente cuando pulses analizar.</p>
+
+      <div class="field api-key-field">
+        <label for="gemini-api-key">Clave API de Gemini</label>
+        <input id="gemini-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="Pega tu clave para esta sesión">
+        <span class="muted">No se guarda en este navegador. Consigue una clave en Google AI Studio.</span>
+      </div>
+
+      <div class="barcode-tools">
+        <p class="eyebrow">PRODUCTOS ENVASADOS</p>
+        <label for="barcode-code">Código de barras</label>
+        <div class="barcode-row">
+          <input id="barcode-code" type="text" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="EAN-13">
+          <button id="lookup-barcode" class="secondary-action" type="button">Buscar</button>
+        </div>
+        <button id="scan-barcode" class="text-button barcode-camera-button" type="button">Escanear con cámara</button>
+        <p id="barcode-status" class="camera-status" role="status" aria-live="polite">La búsqueda consulta Open Food Facts. No proporciona un precio actual.</p>
+      </div>
+
+      <button id="start-camera" class="primary-button" type="button">Activar cámara</button>
+      <p id="camera-status" class="camera-status" role="status" aria-live="polite"></p>
+
+      <div id="camera-view" class="camera-view" hidden>
+        <video id="camera-preview" playsinline autoplay muted aria-label="Vista previa de la cámara"></video>
+        <div class="camera-actions">
+          <button id="capture-photo" class="primary-button" type="button">Hacer foto</button>
+          <button id="stop-camera" class="text-button" type="button">Cerrar cámara</button>
+        </div>
+      </div>
+
+      <div id="photo-review" class="photo-review" hidden>
+        <img id="photo-preview" alt="Foto capturada del producto">
+        <div class="camera-actions">
+          <button id="analyze-photo" class="primary-button" type="button">Analizar foto</button>
+          <button id="retake-photo" class="text-button" type="button">Repetir foto</button>
+        </div>
+      </div>
+
+      <canvas id="photo-canvas" hidden></canvas>
+      <div id="scan-result" class="scan-result" aria-live="polite" hidden>
+        <strong id="scan-product"></strong>
+        <span id="scan-supermarket"></span>
+        <span id="scan-evidence"></span>
+        <span id="scan-confidence"></span>
+      </div>
+    </section>
+
+    <section class="section add-section" aria-labelledby="add-heading">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">A TU LISTA</p>
+          <h1 id="add-heading">Añadir producto</h1>
+        </div>
+        <span class="step" aria-hidden="true">02</span>
+      </div>
+
+      <form id="product-form">
+        <div class="field">
+          <label for="product-name">Nombre del producto</label>
+          <input id="product-name" type="text" placeholder="Ej. Leche semidesnatada" maxlength="80" autocomplete="off" required>
+        </div>
+
+        <div class="form-row">
+          <div class="field">
+            <label for="product-price">Precio por unidad (€)</label>
+            <input id="product-price" type="number" min="0" step="0.01" placeholder="0,95" inputmode="decimal" required>
+          </div>
+          <div class="field">
+            <label id="quantity-label" for="product-quantity">Unidades</label>
+            <input id="product-quantity" type="number" min="1" step="1" value="1" inputmode="numeric" required>
+          </div>
+        </div>
+
+        <button class="primary-button" type="submit"><span aria-hidden="true">+</span> Añadir a mi cesta</button>
+      </form>
+    </section>
+
+    <section class="section basket-section" aria-labelledby="basket-heading">
+      <div class="section-heading basket-heading">
+        <div>
+          <p class="eyebrow">TU COMPRA</p>
+          <h2 id="basket-heading">Mi cesta <span id="item-count" class="count">0 productos</span></h2>
+        </div>
+        <button id="clear-button" class="text-button" type="button">Vaciar cesta</button>
+      </div>
+
+      <div id="empty-state" class="empty-state">
+        <span class="basket-icon" aria-hidden="true">🛒</span>
+        <p>Tu cesta está vacía.</p>
+        <span class="muted">Añade tu primer producto para comenzar.</span>
+      </div>
+
+      <ul id="product-list" class="product-list" aria-label="Productos de la cesta"></ul>
+    </section>
+
+    <p class="footnote">Los precios son orientativos y se guardan solo en este navegador.</p>
+  </main>
+
+  <main id="forum-view" class="page-view" hidden>
+    <section class="section page-intro">
+      <p class="eyebrow">COMUNIDAD SÚPER CESTA</p>
+      <h1>Foro de precios</h1>
+      <p class="muted">Comparte el precio que encontraste y descubre las aportaciones guardadas en este navegador.</p>
+      <p class="local-notice">Este prototipo guarda las publicaciones solo en este dispositivo. Aún no las comparte con otros usuarios.</p>
+    </section>
+
+    <section class="section" aria-labelledby="forum-form-title">
+      <div class="section-heading">
+        <h2 id="forum-form-title">Compartir un precio</h2>
+        <span class="step" aria-hidden="true">01</span>
+      </div>
+      <form id="forum-form">
+        <div class="field">
+          <label for="forum-product">Producto</label>
+          <input id="forum-product" type="text" maxlength="80" placeholder="Ej. Leche semidesnatada" required>
+        </div>
+        <div class="form-row">
+          <div class="field">
+            <label for="forum-supermarket">Supermercado</label>
+            <input id="forum-supermarket" type="text" maxlength="60" placeholder="Ej. Mercado local" required>
+          </div>
+          <div class="field">
+            <label for="forum-price">Precio (€)</label>
+            <input id="forum-price" type="number" min="0" step="0.01" inputmode="decimal" placeholder="1,25" required>
+          </div>
+        </div>
+        <div class="form-row forum-meta-row">
+          <div class="field">
+            <label for="forum-observed-date">Fecha observada</label>
+            <input id="forum-observed-date" type="date" required>
+          </div>
+          <div class="field">
+            <label for="forum-source">Origen del precio</label>
+            <select id="forum-source" required>
+              <option value="" selected disabled>Selecciona origen</option>
+              <option value="label">Etiqueta de tienda</option>
+              <option value="receipt">Ticket de compra</option>
+              <option value="user">Indicado por una persona</option>
+              <option value="estimate">Estimación</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="forum-location">Zona aproximada (opcional)</label>
+          <input id="forum-location" type="text" maxlength="60" placeholder="Ciudad o municipio, sin dirección exacta">
+        </div>
+        <div class="field">
+          <label for="forum-note">Detalles del precio</label>
+          <textarea id="forum-note" maxlength="240" rows="3" placeholder="Tamaño, promoción o fecha aproximada"></textarea>
+        </div>
+        <div class="field">
+          <label for="forum-photo">Foto (opcional)</label>
+          <input id="forum-photo" type="file" accept="image/*" capture="environment">
+          <span class="muted">La foto se reduce y queda guardada en este navegador. Evita incluir datos personales.</span>
+        </div>
+        <img id="forum-photo-preview" class="forum-photo-preview" alt="Vista previa de la foto" hidden>
+        <button class="primary-button" type="submit">Publicar precio</button>
+      </form>
+      <p id="forum-status" class="camera-status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="section" aria-labelledby="comparison-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">MÁS BARATO PRIMERO</p>
+          <h2 id="comparison-title">Comparativa</h2>
+        </div>
+        <select id="forum-sort" aria-label="Ordenar publicaciones">
+          <option value="price">Precio más bajo</option>
+          <option value="recent">Más recientes</option>
+        </select>
+      </div>
+      <div id="forum-comparisons" class="forum-comparisons"></div>
+      <div id="forum-empty" class="empty-state">
+        <p>Aún no hay precios compartidos.</p>
+        <span class="muted">Añade el primero para empezar la comparativa.</span>
+      </div>
+      <ul id="forum-list" class="forum-list" aria-label="Publicaciones del foro"></ul>
+    </section>
+  </main>
+
+  <main id="policies-view" class="page-view" hidden>
+    <section class="section page-intro">
+      <p class="eyebrow">INFORMACIÓN Y TRANSPARENCIA</p>
+      <h1>Privacidad y políticas</h1>
+      <p class="muted">Resumen de cómo funciona esta versión de Súper Cesta.</p>
+      <p class="local-notice">Texto informativo para un prototipo local. Antes de publicar la app, el responsable debe añadir sus datos de contacto y revisar los requisitos legales aplicables.</p>
+    </section>
+
+    <section class="section policy-section" aria-labelledby="privacy-title">
+      <h2 id="privacy-title">Privacidad y datos</h2>
+      <ul>
+        <li>La cesta y las publicaciones del foro se guardan en el almacenamiento local de este navegador. No se sincronizan ni se comparten con otros dispositivos.</li>
+        <li>La cámara solo se solicita después de tu confirmación. La vista previa permanece en el dispositivo; la foto solo se envía a Gemini cuando pulsas «Analizar foto».</li>
+        <li>La clave de Gemini se usa desde el navegador y no se guarda en Súper Cesta. Google recibe la clave y la imagen para procesar la solicitud según sus propias condiciones.</li>
+        <li>Al buscar un código de barras se envía ese código a Open Food Facts para consultar el producto. Esa consulta no proporciona un precio actual garantizado.</li>
+        <li>La zona del foro es opcional: indica solo ciudad o municipio, nunca una dirección exacta.</li>
+        <li>Esta versión no crea cuentas ni incorpora analítica o publicidad. Puedes borrar publicaciones desde el foro y vaciar la cesta desde su sección.</li>
+      </ul>
+    </section>
+
+    <section class="section policy-section" aria-labelledby="community-title">
+      <h2 id="community-title">Normas del foro</h2>
+      <ul>
+        <li>Comparte precios observados y añade contexto útil, como tamaño, promoción y fecha.</li>
+        <li>No publiques datos personales, recibos con información sensible ni imágenes de otras personas sin permiso.</li>
+        <li>Indica si el precio viene de una etiqueta, un ticket, una persona o una estimación. Los precios pueden cambiar y no están verificados por Súper Cesta.</li>
+      </ul>
+    </section>
+
+    <section class="section policy-section" aria-labelledby="terms-title">
+      <h2 id="terms-title">Uso y exactitud</h2>
+      <p class="muted">La identificación por IA y los precios pueden ser incorrectos. Comprueba el producto, el supermercado y el precio antes de comprar. Súper Cesta es una herramienta orientativa; no garantiza la disponibilidad ni el precio en tienda.</p>
+    </section>
+  </main>
+
+  <footer>Súper Cesta <span aria-hidden="true">·</span> Compara y compra con cabeza.</footer>
+  </div>
+</body>
+</html>
