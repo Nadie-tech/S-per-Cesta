@@ -628,6 +628,12 @@ button:focus-visible {
   text-align: right;
 }
 
+.supermarket-empty {
+  margin: 8px 0 0;
+  color: #6b7c70;
+  font-size: 12px;
+}
+
 .supermarket-totals {
   margin: 0;
   padding: 0;

@@ -17,6 +17,7 @@ const itemCount = document.getElementById("item-count");
 const clearButton = document.getElementById("clear-button");
 const supermarketSummary = document.getElementById("supermarket-summary");
 const supermarketTotals = document.getElementById("supermarket-totals");
+const supermarketEmpty = document.getElementById("supermarket-empty");
 const supermarketPending = document.getElementById("supermarket-pending");
 const cameraView = document.getElementById("camera-view");
 const cameraPreview = document.getElementById("camera-preview");
@@ -472,7 +473,8 @@ function calculateTotal() {
 }
 
 function renderSupermarketSummary() {
-  supermarketSummary.hidden = products.length === 0;
+  supermarketSummary.hidden = false;
+  supermarketEmpty.hidden = products.length > 0;
   supermarketTotals.replaceChildren();
   const groups = new Map();
   let pendingCount = 0;
