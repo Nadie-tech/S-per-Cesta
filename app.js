@@ -17,6 +17,8 @@ const itemCount = document.getElementById("item-count");
 const clearButton = document.getElementById("clear-button");
 const cameraView = document.getElementById("camera-view");
 const cameraPreview = document.getElementById("camera-preview");
+const barcodeFrame = document.getElementById("barcode-frame");
+const barcodeFrameMessage = document.getElementById("barcode-frame-message");
 const cancelScanButton = document.getElementById("cancel-scan");
 const scanAgainButton = document.getElementById("scan-again");
 const productLoading = document.getElementById("product-loading");
@@ -287,6 +289,9 @@ function stopCamera() {
   barcodeReadActive = false;
   cameraPreview.srcObject = null;
   cameraView.hidden = true;
+  barcodeFrame.classList.remove("is-detected");
+  barcodeFrame.classList.add("is-searching");
+  barcodeFrameMessage.textContent = "Alinea el código dentro del marco";
   cancelScanButton.hidden = true;
   scanBarcodeButton.hidden = false;
 }
@@ -413,23 +418,38 @@ async function startBarcodeScan() {
     scanBarcodeButton.disabled = true;
     cancelScanButton.hidden = false;
     cameraView.hidden = false;
+    barcodeFrame.classList.remove("is-detected");
+    barcodeFrame.classList.add("is-searching");
+    barcodeFrameMessage.textContent = "Alinea el código dentro del marco";
     barcodeReadActive = true;
     const reader = new BrowserMultiFormatReader();
     setBarcodeStatus("Enfoca el código de barras dentro de la imagen.");
     const controls = await reader.decodeFromVideoDevice(undefined, cameraPreview, (result, error, activeControls) => {
-      if (!result || !barcodeReadActive) return;
+      if (!barcodeReadActive) return;
+      if (!result) {
+        barcodeFrame.classList.add("is-searching");
+        barcodeFrameMessage.textContent = "Ajusta el código dentro del marco rojo";
+        return;
+      }
       const code = result.getText().trim();
       if (!/^(?:\d{8}|\d{12,14})$/.test(code)) return;
 
       barcodeReadActive = false;
-      activeControls?.stop();
-      barcodeControls = null;
-      cameraPreview.srcObject = null;
-      cameraView.hidden = true;
-      cancelScanButton.hidden = true;
-      scanBarcodeButton.disabled = false;
-      barcodeInput.value = code;
-      lookupBarcode(code);
+      barcodeFrame.classList.remove("is-searching");
+      barcodeFrame.classList.add("is-detected");
+      barcodeFrameMessage.textContent = "Código bien encuadrado";
+      setBarcodeStatus("Código detectado. Consultando el catálogo…");
+      window.setTimeout(() => {
+        if (session !== scannerSession) return;
+        activeControls?.stop();
+        barcodeControls = null;
+        cameraPreview.srcObject = null;
+        cameraView.hidden = true;
+        cancelScanButton.hidden = true;
+        scanBarcodeButton.disabled = false;
+        barcodeInput.value = code;
+        lookupBarcode(code);
+      }, 650);
     });
     if (barcodeReadActive) barcodeControls = controls;
     else controls.stop();
@@ -497,7 +517,7 @@ function render() {
 
   products.forEach((product, index) => {
     const item = document.createElement("li");
-    item.className = "product-item";
+    item.className = `product-item${product.imageUrl ? " has-image" : ""}`;
 
     const info = document.createElement("div");
     info.className = "product-info";
@@ -516,18 +536,20 @@ function render() {
     name.textContent = product.name;
 
     const detail = document.createElement("span");
-    const detailParts = [`${product.quantity} unidad(es)`];
+    const hasPrice = Number.isFinite(product.price);
+    const detailParts = [hasPrice
+      ? `${product.quantity} × ${money(product.price)} por unidad`
+      : `${product.quantity} unidad(es) · Precio pendiente`];
     if (product.brand) detailParts.push(product.brand);
     if (product.netQuantity) detailParts.push(product.netQuantity);
     if (product.barcode) detailParts.push(`EAN/UPC ${product.barcode}`);
-    if (product.supermarket) detailParts.push(product.supermarket);
+    if (product.supermarket) detailParts.push(`En ${product.supermarket}`);
+    if (hasPrice) detailParts.push(product.priceSource === "verified" ? "Precio verificado" : "Precio introducido por ti");
     detail.textContent = detailParts.join(" · ");
 
     const subtotal = document.createElement("span");
     subtotal.className = "product-total";
-    subtotal.textContent = Number.isFinite(product.price)
-      ? `${money(product.price * product.quantity)} · Precio introducido por ti`
-      : "Precio pendiente";
+    subtotal.textContent = hasPrice ? money(product.price * product.quantity) : "";
 
     const remove = document.createElement("button");
     remove.type = "button";

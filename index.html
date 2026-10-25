@@ -102,6 +102,13 @@
 
       <div id="camera-view" class="camera-view" hidden>
         <video id="camera-preview" playsinline autoplay muted aria-label="Vista previa de la cámara"></video>
+        <div id="barcode-frame" class="barcode-frame is-searching" aria-hidden="true">
+          <span class="frame-corner corner-top-left"></span>
+          <span class="frame-corner corner-top-right"></span>
+          <span class="frame-corner corner-bottom-left"></span>
+          <span class="frame-corner corner-bottom-right"></span>
+          <span id="barcode-frame-message" class="barcode-frame-message">Alinea el código dentro del marco</span>
+        </div>
       </div>
 
       <p id="product-loading" class="camera-status" role="status" aria-live="polite" hidden>Consultando Open Food Facts…</p>
