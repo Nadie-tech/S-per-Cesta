@@ -1,6 +1,7 @@
 const budgetInput = document.getElementById("budget");
 const totalElement = document.getElementById("total");
 const remainingElement = document.getElementById("remaining");
+const partialTotalMessage = document.getElementById("partial-total-message");
 const progressBar = document.getElementById("progress-bar");
 const budgetMessage = document.getElementById("budget-message");
 
@@ -8,28 +9,25 @@ const productForm = document.getElementById("product-form");
 const nameInput = document.getElementById("product-name");
 const priceInput = document.getElementById("product-price");
 const quantityInput = document.getElementById("product-quantity");
+const supermarketInput = document.getElementById("product-supermarket");
 
 const productList = document.getElementById("product-list");
 const emptyState = document.getElementById("empty-state");
 const itemCount = document.getElementById("item-count");
 const clearButton = document.getElementById("clear-button");
-const apiKeyInput = document.getElementById("gemini-api-key");
-const startCameraButton = document.getElementById("start-camera");
 const cameraView = document.getElementById("camera-view");
 const cameraPreview = document.getElementById("camera-preview");
-const capturePhotoButton = document.getElementById("capture-photo");
-const stopCameraButton = document.getElementById("stop-camera");
-const photoReview = document.getElementById("photo-review");
-const photoPreview = document.getElementById("photo-preview");
-const photoCanvas = document.getElementById("photo-canvas");
-const analyzePhotoButton = document.getElementById("analyze-photo");
-const retakePhotoButton = document.getElementById("retake-photo");
-const cameraStatus = document.getElementById("camera-status");
+const cancelScanButton = document.getElementById("cancel-scan");
+const scanAgainButton = document.getElementById("scan-again");
+const productLoading = document.getElementById("product-loading");
 const scanResult = document.getElementById("scan-result");
 const scanProduct = document.getElementById("scan-product");
-const scanSupermarket = document.getElementById("scan-supermarket");
-const scanEvidence = document.getElementById("scan-evidence");
-const scanConfidence = document.getElementById("scan-confidence");
+const scanImage = document.getElementById("scan-image");
+const scanBrand = document.getElementById("scan-brand");
+const scanQuantity = document.getElementById("scan-quantity");
+const scanCategory = document.getElementById("scan-category");
+const scanBarcodeValue = document.getElementById("scan-barcode-value");
+const scanPrice = document.getElementById("scan-price");
 const quantityLabel = document.getElementById("quantity-label");
 const barcodeInput = document.getElementById("barcode-code");
 const lookupBarcodeButton = document.getElementById("lookup-barcode");
@@ -59,12 +57,10 @@ const forumComparisons = document.getElementById("forum-comparisons");
 const forumEmpty = document.getElementById("forum-empty");
 const forumList = document.getElementById("forum-list");
 
-let cameraStream = null;
 let barcodeControls = null;
 let barcodeReadActive = false;
-let capturedImage = null;
-let detectedSupermarket = "";
-let detectedPriceSource = "user";
+let scannerSession = 0;
+let scannedProduct = null;
 let forumPreviewUrl = "";
 
 const priceSourceLabels = {
@@ -117,8 +113,7 @@ if (!Array.isArray(products)) {
 products = products.filter(product =>
   product &&
   typeof product.name === "string" &&
-  Number.isFinite(product.price) &&
-  product.price >= 0 &&
+  (product.price == null || (Number.isFinite(product.price) && product.price >= 0)) &&
   Number.isSafeInteger(product.quantity) &&
   product.quantity >= 1
 );
@@ -283,60 +278,17 @@ function renderForum() {
   }
 }
 
-function setCameraStatus(message, isError = false) {
-  cameraStatus.textContent = message;
-  cameraStatus.classList.toggle("error", isError);
-}
-
 function stopCamera() {
-  if (cameraStream) {
-    cameraStream.getTracks().forEach(track => track.stop());
-    cameraStream = null;
-  }
-
+  scannerSession += 1;
   if (barcodeControls) {
     barcodeControls.stop();
     barcodeControls = null;
   }
   barcodeReadActive = false;
-
   cameraPreview.srcObject = null;
   cameraView.hidden = true;
-  startCameraButton.hidden = false;
-  capturePhotoButton.hidden = false;
-}
-
-async function startCamera() {
-  if (!window.confirm("¿Das permiso para activar la cámara? No se tomará ni enviará ninguna foto hasta que tú lo indiques.")) {
-    setCameraStatus("La cámara no se ha activado.");
-    return;
-  }
-
-  if (!navigator.mediaDevices?.getUserMedia) {
-    setCameraStatus("Este navegador no permite acceder a la cámara desde esta página.", true);
-    return;
-  }
-
-  try {
-    cameraStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: "environment" } },
-      audio: false
-    });
-    cameraPreview.srcObject = cameraStream;
-    cameraView.hidden = false;
-    photoReview.hidden = true;
-    startCameraButton.hidden = true;
-    setCameraStatus("Cámara activa. Encuadra el producto y haz la foto.");
-    await cameraPreview.play();
-  } catch (error) {
-    stopCamera();
-    setCameraStatus(
-      error.name === "NotAllowedError"
-        ? "No se concedió permiso para usar la cámara. Puedes añadir el producto manualmente."
-        : "No se pudo iniciar la cámara. Comprueba los permisos del navegador.",
-      true
-    );
-  }
+  cancelScanButton.hidden = true;
+  scanBarcodeButton.hidden = false;
 }
 
 function setBarcodeStatus(message, isError = false) {
@@ -344,44 +296,105 @@ function setBarcodeStatus(message, isError = false) {
   barcodeStatus.classList.toggle("error", isError);
 }
 
-async function lookupBarcode() {
-  const code = barcodeInput.value.trim();
-  if (!/^\d{8,14}$/.test(code)) {
+async function lookupBarcode(code = barcodeInput.value.trim()) {
+  if (!/^(?:\d{8}|\d{12,14})$/.test(code)) {
     setBarcodeStatus("Introduce un código EAN/UPC válido de 8 a 14 cifras.", true);
     barcodeInput.focus();
     return;
   }
 
+  barcodeInput.value = code;
   lookupBarcodeButton.disabled = true;
-  setBarcodeStatus("Buscando producto en Open Food Facts…");
+  productLoading.hidden = false;
+  scanResult.hidden = true;
+  scannedProduct = { barcode: code };
+  nameInput.value = "";
+  priceInput.value = "";
+  supermarketInput.value = "";
+  quantityInput.value = "1";
+  quantityLabel.textContent = "Unidades";
+  setBarcodeStatus("Consultando el catálogo público…");
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 12000);
   try {
-    const response = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,product_name_es,brands,quantity`);
-    if (!response.ok) throw new Error("No se pudo consultar Open Food Facts.");
+    const fields = "code,product_name,product_name_es,brands,quantity,categories,image_front_url";
+    const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=${encodeURIComponent(fields)}`;
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error("No pudimos consultar Open Food Facts. Comprueba tu conexión o introduce el producto manualmente.");
     const result = await response.json();
     const product = result.product;
-    const productName = product?.product_name_es || product?.product_name;
-    if (result.status !== 1 || !productName) {
-      throw new Error("No se encontró el producto. Puedes introducirlo manualmente.");
+    if (result.status !== 1 || !product || typeof product !== "object") {
+      scannedProduct = { barcode: code };
+      nameInput.value = "";
+      priceInput.value = "";
+      supermarketInput.value = "";
+      quantityInput.value = "1";
+      quantityLabel.textContent = "Unidades";
+      setBarcodeStatus("No encontramos ese producto. Puedes introducirlo manualmente.", true);
+      nameInput.focus();
+      return;
     }
 
+    const productName = product.product_name_es || product.product_name || "";
+    scannedProduct = {
+      barcode: product.code || code,
+      brand: product.brands || "",
+      quantityDescription: product.quantity || "",
+      category: product.categories || "",
+      imageUrl: typeof product.image_front_url === "string" && /^https:\/\//i.test(product.image_front_url)
+        ? product.image_front_url
+        : ""
+    };
     nameInput.value = productName;
     priceInput.value = "";
+    supermarketInput.value = "";
     quantityInput.value = "1";
-    quantityLabel.textContent = "¿Cuántas unidades quieres?";
-    const details = [product.brands, product.quantity].filter(Boolean).join(" · ");
-    setBarcodeStatus(`Producto encontrado${details ? `: ${details}` : ""}. La base no proporciona un precio actual; añádelo manualmente.`);
-    nameInput.focus();
+    quantityLabel.textContent = "Unidades";
+
+    scanProduct.textContent = productName || "Producto sin nombre en el catálogo";
+    scanBrand.textContent = product.brands ? `Marca: ${product.brands}` : "";
+    scanBrand.hidden = !product.brands;
+    scanQuantity.textContent = product.quantity ? `Contenido: ${product.quantity}` : "";
+    scanQuantity.hidden = !product.quantity;
+    scanCategory.textContent = product.categories ? `Categoría: ${product.categories}` : "";
+    scanCategory.hidden = !product.categories;
+    scanBarcodeValue.textContent = `Código: ${scannedProduct.barcode}`;
+    scanPrice.textContent = "Precio pendiente";
+    if (scannedProduct.imageUrl) {
+      scanImage.onerror = () => {
+        scanImage.hidden = true;
+        scanImage.removeAttribute("src");
+      };
+      scanImage.src = scannedProduct.imageUrl;
+      scanImage.alt = productName ? `Imagen de ${productName}` : "Imagen del producto";
+      scanImage.hidden = false;
+    } else {
+      scanImage.removeAttribute("src");
+      scanImage.hidden = true;
+    }
+    scanResult.hidden = false;
+    setBarcodeStatus(productName
+      ? "Producto encontrado. Revisa la ficha, indica el supermercado y añade el precio manualmente."
+      : "Código encontrado, pero el catálogo no incluye el nombre. Complétalo manualmente.");
+    if (productName) priceInput.focus();
+    else nameInput.focus();
     productForm.scrollIntoView({ behavior: "smooth", block: "center" });
   } catch (error) {
-    setBarcodeStatus(error.message || "No se pudo consultar Open Food Facts. Comprueba la conexión o introduce el producto manualmente.", true);
+    scannedProduct = { barcode: code };
+    setBarcodeStatus(error.name === "AbortError"
+      ? "La consulta tardó demasiado. Comprueba tu conexión o introduce el producto manualmente."
+      : "No pudimos consultar el producto. Comprueba tu conexión o introdúcelo manualmente.", true);
   } finally {
+    window.clearTimeout(timeoutId);
+    productLoading.hidden = true;
     lookupBarcodeButton.disabled = false;
   }
 }
 
 async function startBarcodeScan() {
-  if (!window.confirm("¿Das permiso para activar la cámara y leer un código de barras?")) {
-    setBarcodeStatus("La cámara no se ha activado.");
+  if (barcodeReadActive) return;
+  if (!window.confirm("¿Permites activar la cámara para leer un código de barras?")) {
+    setBarcodeStatus("No se activó la cámara. Puedes escribir el código manualmente.");
     return;
   }
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -389,173 +402,64 @@ async function startBarcodeScan() {
     return;
   }
 
+  stopCamera();
+  const session = scannerSession;
+  scanBarcodeButton.disabled = true;
+  cancelScanButton.hidden = false;
   setBarcodeStatus("Cargando lector de códigos…");
   try {
     const { BrowserMultiFormatReader } = await import("https://cdn.jsdelivr.net/npm/@zxing/browser@0.2.1/+esm");
-    stopCamera();
+    if (session !== scannerSession) return;
+    scanBarcodeButton.disabled = true;
+    cancelScanButton.hidden = false;
     cameraView.hidden = false;
-    photoReview.hidden = true;
-    startCameraButton.hidden = true;
-    capturePhotoButton.hidden = true;
     barcodeReadActive = true;
     const reader = new BrowserMultiFormatReader();
     setBarcodeStatus("Enfoca el código de barras dentro de la imagen.");
     const controls = await reader.decodeFromVideoDevice(undefined, cameraPreview, (result, error, activeControls) => {
       if (!result || !barcodeReadActive) return;
       const code = result.getText().trim();
-      if (!/^\d{8,14}$/.test(code)) return;
+      if (!/^(?:\d{8}|\d{12,14})$/.test(code)) return;
 
       barcodeReadActive = false;
       activeControls?.stop();
       barcodeControls = null;
       cameraPreview.srcObject = null;
       cameraView.hidden = true;
-      startCameraButton.hidden = false;
-      capturePhotoButton.hidden = false;
+      cancelScanButton.hidden = true;
+      scanBarcodeButton.disabled = false;
       barcodeInput.value = code;
-      setBarcodeStatus(`Código leído: ${code}. Buscando producto…`);
-      lookupBarcode();
+      lookupBarcode(code);
     });
     if (barcodeReadActive) barcodeControls = controls;
     else controls.stop();
   } catch {
     stopCamera();
-    setBarcodeStatus("No se pudo iniciar el lector. Escribe el código manualmente o comprueba la conexión.", true);
-  }
-}
-
-function capturePhoto() {
-  const sourceWidth = cameraPreview.videoWidth;
-  const sourceHeight = cameraPreview.videoHeight;
-  if (!sourceWidth || !sourceHeight) {
-    setCameraStatus("La cámara todavía se está iniciando. Inténtalo de nuevo en un momento.", true);
-    return;
-  }
-
-  const scale = Math.min(1, 1280 / Math.max(sourceWidth, sourceHeight));
-  photoCanvas.width = Math.round(sourceWidth * scale);
-  photoCanvas.height = Math.round(sourceHeight * scale);
-  photoCanvas.getContext("2d").drawImage(cameraPreview, 0, 0, photoCanvas.width, photoCanvas.height);
-  capturedImage = photoCanvas.toDataURL("image/jpeg", 0.84);
-  photoPreview.src = capturedImage;
-  photoReview.hidden = false;
-  stopCamera();
-  setCameraStatus("Foto lista. La imagen solo se enviará a Gemini si pulsas «Analizar foto».");
-}
-
-function getInteractionText(responseData) {
-  if (typeof responseData.output_text === "string") return responseData.output_text;
-
-  const content = (responseData.steps || []).flatMap(step => step.content || []);
-  return content
-    .filter(part => typeof part.text === "string")
-    .map(part => part.text)
-    .join("\n");
-}
-
-function parseAnalysis(text) {
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) throw new Error("La IA no devolvió un resultado legible.");
-  return JSON.parse(text.slice(start, end + 1));
-}
-
-async function analyzePhoto() {
-  const apiKey = apiKeyInput.value.trim();
-  if (!apiKey) {
-    setCameraStatus("Pega primero tu clave API de Gemini para analizar la foto.", true);
-    apiKeyInput.focus();
-    return;
-  }
-  if (!capturedImage) {
-    setCameraStatus("Haz una foto antes de iniciar el análisis.", true);
-    return;
-  }
-
-  analyzePhotoButton.disabled = true;
-  setCameraStatus("Analizando producto, etiqueta y señales visibles del supermercado…");
-
-  try {
-    const [metadata, imageData] = capturedImage.split(",");
-    const mimeType = metadata.match(/data:(.*?);base64/)?.[1] || "image/jpeg";
-    const prompt = [
-      "Analiza la foto de un producto de supermercado. Devuelve solo un objeto JSON válido, sin Markdown, con estas claves:",
-      '"product_name" (nombre específico legible del producto o cadena vacía),',
-      '"brand" (marca del producto visible o cadena vacía),',
-      '"supermarket" (nombre de la cadena solo si hay evidencia visible clara; si no, null),',
-      '"price_eur" (número solo si un precio de venta aparece claramente en una etiqueta visible; de lo contrario null),',
-      '"price_evidence" (breve descripción de dónde se leyó el precio o por qué no está disponible),',
-      '"confidence" ("alta", "media" o "baja").',
-      "No inventes precios, tiendas ni datos ilegibles. No confundas la marca del producto con el supermercado. El precio debe ser el precio unitario en euros, no un precio por kilo salvo que no haya otro, en cuyo caso explica esto en price_evidence."
-    ].join(" ");
-
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey
-      },
-      body: JSON.stringify({
-        model: "gemini-flash-latest",
-        store: false,
-        input: [
-          { type: "text", text: prompt },
-          { type: "image", data: imageData, mime_type: mimeType }
-        ]
-      })
-    });
-
-    const responseData = await response.json();
-    if (!response.ok) {
-      throw new Error(responseData.error?.message || "Gemini no pudo analizar la imagen.");
-    }
-
-    const result = parseAnalysis(getInteractionText(responseData));
-    const productName = typeof result.product_name === "string" ? result.product_name.trim() : "";
-    if (!productName) throw new Error("No se pudo identificar el producto. Prueba con una foto más clara.");
-
-    nameInput.value = productName;
-    detectedSupermarket = typeof result.supermarket === "string" ? result.supermarket.trim() : "";
-    const price = result.price_eur;
-    const numericPrice = typeof price === "number"
-      ? price
-      : typeof price === "string" ? Number(price.replace(",", ".")) : NaN;
-    priceInput.value = Number.isFinite(numericPrice) && numericPrice >= 0 ? numericPrice.toFixed(2) : "";
-    quantityInput.value = "1";
-    quantityLabel.textContent = "¿Cuántas unidades quieres?";
-
-    scanProduct.textContent = `${productName}${result.brand ? ` · ${result.brand}` : ""}`;
-    scanSupermarket.textContent = detectedSupermarket
-      ? `Supermercado detectado: ${detectedSupermarket}`
-      : "No se pudo identificar el supermercado con certeza.";
-    scanEvidence.textContent = result.price_evidence || "Revisa el precio reconocido antes de añadir el producto.";
-    scanConfidence.textContent = `Confianza estimada por IA: ${result.confidence || "no indicada"}. Verifica el dato.`;
-    scanResult.hidden = false;
-
-    setCameraStatus("Revisa los datos y confirma las unidades antes de añadir el producto.");
-    (priceInput.value ? quantityInput : priceInput).focus();
-    productForm.scrollIntoView({ behavior: "smooth", block: "center" });
-  } catch (error) {
-    setCameraStatus(error.message || "No se pudo contactar con Gemini. Comprueba tu conexión y la clave API.", true);
-  } finally {
-    analyzePhotoButton.disabled = false;
+    scanBarcodeButton.disabled = false;
+    cancelScanButton.hidden = true;
+    setBarcodeStatus("No se pudo acceder a la cámara. Revisa los permisos o escribe el código manualmente.", true);
   }
 }
 
 function calculateTotal() {
   return products.reduce(
-    (sum, product) => sum + product.price * product.quantity,
+    (sum, product) => sum + (Number.isFinite(product.price) ? product.price * product.quantity : 0),
     0
   );
 }
 
 function render() {
   const total = calculateTotal();
+  const pendingPriceCount = products.filter(product => !Number.isFinite(product.price)).length;
   const remaining = budget - total;
   const isOver = total > budget;
 
   totalElement.textContent = money(total);
   remainingElement.textContent = money(remaining);
+  partialTotalMessage.hidden = pendingPriceCount === 0;
+  partialTotalMessage.textContent = pendingPriceCount
+    ? `Total parcial: faltan precios de ${pendingPriceCount} ${pendingPriceCount === 1 ? "producto" : "productos"}. El total final puede ser mayor.`
+    : "";
 
   remainingElement.style.color = isOver ? "#b91c1c" : "#15803d";
 
@@ -569,7 +473,9 @@ function render() {
 
   if (isOver) {
     budgetMessage.textContent =
-      "Has superado tu presupuesto en " + money(total - budget) + ".";
+      "Los productos con precio superan tu presupuesto en " + money(total - budget) + ".";
+  } else if (pendingPriceCount > 0) {
+    budgetMessage.textContent = "El subtotal conocido está dentro del presupuesto; el total final es parcial.";
   } else if (budget === 0 && total === 0) {
     budgetMessage.textContent =
       "Establece un presupuesto para controlar tu compra.";
@@ -596,17 +502,32 @@ function render() {
     const info = document.createElement("div");
     info.className = "product-info";
 
+    if (product.imageUrl) {
+      const image = document.createElement("img");
+      image.className = "product-thumbnail";
+      image.src = product.imageUrl;
+      image.alt = product.name ? `Imagen de ${product.name}` : "Imagen del producto";
+      image.loading = "lazy";
+      image.addEventListener("error", () => image.remove(), { once: true });
+      item.append(image);
+    }
+
     const name = document.createElement("strong");
     name.textContent = product.name;
 
     const detail = document.createElement("span");
-    detail.textContent =
-      money(product.price) + " × " + product.quantity + " unidad(es)" +
-      (product.supermarket ? " · " + product.supermarket : "");
+    const detailParts = [`${product.quantity} unidad(es)`];
+    if (product.brand) detailParts.push(product.brand);
+    if (product.netQuantity) detailParts.push(product.netQuantity);
+    if (product.barcode) detailParts.push(`EAN/UPC ${product.barcode}`);
+    if (product.supermarket) detailParts.push(product.supermarket);
+    detail.textContent = detailParts.join(" · ");
 
     const subtotal = document.createElement("span");
     subtotal.className = "product-total";
-    subtotal.textContent = money(product.price * product.quantity);
+    subtotal.textContent = Number.isFinite(product.price)
+      ? `${money(product.price * product.quantity)} · Precio introducido por ti`
+      : "Precio pendiente";
 
     const remove = document.createElement("button");
     remove.type = "button";
@@ -647,11 +568,17 @@ productForm.addEventListener("submit", event => {
   event.preventDefault();
 
   const name = nameInput.value.trim();
-  const price = priceInput.valueAsNumber;
+  const price = priceInput.value.trim() === "" ? null : priceInput.valueAsNumber;
   const quantity = quantityInput.valueAsNumber;
+  const supermarket = supermarketInput.value.trim();
 
-  if (!name || !Number.isFinite(price) || price < 0) {
-    alert("Introduce un nombre y un precio válido.");
+  if (!name || (price !== null && (!Number.isFinite(price) || price < 0))) {
+    alert("Introduce un nombre y, si conoces el precio, un importe válido.");
+    return;
+  }
+
+  if (!supermarket) {
+    supermarketInput.focus();
     return;
   }
 
@@ -660,11 +587,21 @@ productForm.addEventListener("submit", event => {
     return;
   }
 
+  const duplicate = scannedProduct?.barcode && products.some(product => product.barcode === scannedProduct.barcode);
+  if (duplicate && !window.confirm("Este código ya está en la cesta. ¿Quieres añadir otra línea igualmente?")) return;
+
   products.push({
     name,
-    price: Math.round(price * 100) / 100,
+    price: price === null ? null : Math.round(price * 100) / 100,
     quantity,
-    supermarket: detectedSupermarket
+    supermarket,
+    barcode: scannedProduct?.barcode || "",
+    brand: scannedProduct?.brand || "",
+    netQuantity: scannedProduct?.quantityDescription || "",
+    category: scannedProduct?.category || "",
+    imageUrl: scannedProduct?.imageUrl || "",
+    priceSource: price === null ? "pending" : "user",
+    priceUpdatedAt: price === null ? null : new Date().toISOString()
   });
 
   saveData();
@@ -673,21 +610,24 @@ productForm.addEventListener("submit", event => {
   productForm.reset();
   quantityInput.value = 1;
   quantityLabel.textContent = "Unidades";
-  detectedSupermarket = "";
+  scannedProduct = null;
+  scanImage.removeAttribute("src");
+  scanImage.hidden = true;
   scanResult.hidden = true;
   nameInput.focus();
 });
 
-startCameraButton.addEventListener("click", startCamera);
-capturePhotoButton.addEventListener("click", capturePhoto);
-stopCameraButton.addEventListener("click", () => {
-  stopCamera();
-  setCameraStatus("Cámara cerrada.");
-});
-analyzePhotoButton.addEventListener("click", analyzePhoto);
-retakePhotoButton.addEventListener("click", startCamera);
-lookupBarcodeButton.addEventListener("click", lookupBarcode);
 scanBarcodeButton.addEventListener("click", startBarcodeScan);
+lookupBarcodeButton.addEventListener("click", () => lookupBarcode());
+cancelScanButton.addEventListener("click", () => {
+  stopCamera();
+  setBarcodeStatus("Escaneo cancelado. Puedes reintentar o escribir el código manualmente.");
+});
+scanAgainButton.addEventListener("click", () => {
+  scannedProduct = null;
+  scanResult.hidden = true;
+  startBarcodeScan();
+});
 window.addEventListener("pagehide", stopCamera);
 
 clearButton.addEventListener("click", () => {
@@ -809,6 +749,10 @@ window.addEventListener("pagehide", () => {
 
 render();
 renderForum();
+
+if ("serviceWorker" in navigator && location.protocol !== "file:") {
+  navigator.serviceWorker.register("./sw.js").catch(() => {});
+}
 
 try {
   const hasEntered = sessionStorage.getItem("cesta-clara-entered") === "true";

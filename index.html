@@ -1,11 +1,12 @@
 <!DOCTYPE html>
 <html lang="es">
-<head><link rel="manifest" href="./manifest.webmanifest">
-<meta name="theme-color" content="#007346">
+<head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#087b4e">
   <meta name="description" content="Súper Cesta: compara precios, organiza tu compra y controla tu presupuesto.">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="./manifest.webmanifest">
   <title>Súper Cesta - Tu compra bajo control</title>
   <link rel="stylesheet" href="style.css">
   <script src="app.js" defer></script>
@@ -57,14 +58,15 @@
 
       <div class="totals" aria-live="polite">
         <div>
-          <span class="muted">Total de la cesta</span>
+          <span class="muted">Subtotal con precio</span>
           <strong id="total">0,00&nbsp;€</strong>
         </div>
         <div class="remaining">
-          <span class="muted">Te queda</span>
+          <span class="muted">Disponible según precios conocidos</span>
           <strong id="remaining">50,00&nbsp;€</strong>
         </div>
       </div>
+      <p id="partial-total-message" class="partial-total-message" aria-live="polite" hidden></p>
 
       <div class="progress" role="progressbar" aria-label="Presupuesto utilizado" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
         <div id="progress-bar"></div>
@@ -75,55 +77,43 @@
     <section class="section camera-section" aria-labelledby="camera-heading">
       <div class="section-heading">
         <div>
-          <p class="eyebrow">IDENTIFICACIÓN CON IA</p>
-          <h2 id="camera-heading">Escanear producto</h2>
+          <p class="eyebrow">CÓDIGO DE BARRAS</p>
+          <h2 id="camera-heading">Identificar producto</h2>
         </div>
-        <span class="step" aria-hidden="true">IA</span>
+        <span class="step" aria-hidden="true">EAN</span>
       </div>
-      <p class="muted">La cámara solo se activa tras tu confirmación. La foto se envía a Gemini únicamente cuando pulses analizar.</p>
-
-      <div class="field api-key-field">
-        <label for="gemini-api-key">Clave API de Gemini</label>
-        <input id="gemini-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="Pega tu clave para esta sesión">
-        <span class="muted">No se guarda en este navegador. Consigue una clave en Google AI Studio.</span>
-      </div>
+      <p class="muted">Escanea un EAN/UPC o escribe el código. Open Food Facts puede aportar datos del producto, pero no ofrece precios actuales fiables.</p>
 
       <div class="barcode-tools">
         <p class="eyebrow">PRODUCTOS ENVASADOS</p>
         <label for="barcode-code">Código de barras</label>
         <div class="barcode-row">
-          <input id="barcode-code" type="text" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="EAN-13">
+          <input id="barcode-code" type="text" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="EAN-13, EAN-8 o UPC-A">
           <button id="lookup-barcode" class="secondary-action" type="button">Buscar</button>
         </div>
-        <button id="scan-barcode" class="text-button barcode-camera-button" type="button">Escanear con cámara</button>
-        <p id="barcode-status" class="camera-status" role="status" aria-live="polite">La búsqueda consulta Open Food Facts. No proporciona un precio actual.</p>
+        <button id="scan-barcode" class="primary-button scanner-button" type="button">
+          <span class="scanner-icon" aria-hidden="true">📷</span>
+          <span class="scanner-copy"><strong>Escanear con cámara</strong><small>EAN-13 · EAN-8 · UPC-A</small></span>
+          <span class="scanner-arrow" aria-hidden="true">→</span>
+        </button>
+        <button id="cancel-scan" class="text-button barcode-camera-button" type="button" hidden>Cancelar escaneo</button>
+        <p id="barcode-status" class="camera-status" role="status" aria-live="polite">La búsqueda consulta el catálogo público; el precio se introduce manualmente.</p>
       </div>
-
-      <button id="start-camera" class="primary-button" type="button">Activar cámara</button>
-      <p id="camera-status" class="camera-status" role="status" aria-live="polite"></p>
 
       <div id="camera-view" class="camera-view" hidden>
         <video id="camera-preview" playsinline autoplay muted aria-label="Vista previa de la cámara"></video>
-        <div class="camera-actions">
-          <button id="capture-photo" class="primary-button" type="button">Hacer foto</button>
-          <button id="stop-camera" class="text-button" type="button">Cerrar cámara</button>
-        </div>
       </div>
 
-      <div id="photo-review" class="photo-review" hidden>
-        <img id="photo-preview" alt="Foto capturada del producto">
-        <div class="camera-actions">
-          <button id="analyze-photo" class="primary-button" type="button">Analizar foto</button>
-          <button id="retake-photo" class="text-button" type="button">Repetir foto</button>
-        </div>
-      </div>
-
-      <canvas id="photo-canvas" hidden></canvas>
+      <p id="product-loading" class="camera-status" role="status" aria-live="polite" hidden>Consultando Open Food Facts…</p>
       <div id="scan-result" class="scan-result" aria-live="polite" hidden>
+        <img id="scan-image" class="scan-image" alt="Imagen del producto" hidden>
         <strong id="scan-product"></strong>
-        <span id="scan-supermarket"></span>
-        <span id="scan-evidence"></span>
-        <span id="scan-confidence"></span>
+        <span id="scan-brand"></span>
+        <span id="scan-quantity"></span>
+        <span id="scan-category"></span>
+        <span id="scan-barcode-value"></span>
+        <strong id="scan-price" class="scan-price">Precio pendiente</strong>
+        <button id="scan-again" class="text-button barcode-camera-button" type="button">Escanear otro producto</button>
       </div>
     </section>
 
@@ -145,12 +135,27 @@
         <div class="form-row">
           <div class="field">
             <label for="product-price">Precio por unidad (€)</label>
-            <input id="product-price" type="number" min="0" step="0.01" placeholder="0,95" inputmode="decimal" required>
+            <input id="product-price" type="number" min="0" step="0.01" placeholder="Precio pendiente" inputmode="decimal">
+            <span class="muted">Open Food Facts no garantiza precios actuales.</span>
           </div>
           <div class="field">
             <label id="quantity-label" for="product-quantity">Unidades</label>
             <input id="product-quantity" type="number" min="1" step="1" value="1" inputmode="numeric" required>
           </div>
+        </div>
+
+        <div class="field">
+          <label for="product-supermarket">Supermercado del precio</label>
+          <input id="product-supermarket" type="text" list="supermarket-options" maxlength="60" placeholder="Elige o escribe el supermercado" required>
+          <datalist id="supermarket-options">
+            <option value="Mercadona"></option>
+            <option value="Carrefour"></option>
+            <option value="Lidl"></option>
+            <option value="Aldi"></option>
+            <option value="DIA"></option>
+            <option value="Consum"></option>
+            <option value="Alcampo"></option>
+          </datalist>
         </div>
 
         <button class="primary-button" type="submit"><span aria-hidden="true">+</span> Añadir a mi cesta</button>
@@ -273,9 +278,8 @@
       <h2 id="privacy-title">Privacidad y datos</h2>
       <ul>
         <li>La cesta y las publicaciones del foro se guardan en el almacenamiento local de este navegador. No se sincronizan ni se comparten con otros dispositivos.</li>
-        <li>La cámara solo se solicita después de tu confirmación. La vista previa permanece en el dispositivo; la foto solo se envía a Gemini cuando pulsas «Analizar foto».</li>
-        <li>La clave de Gemini se usa desde el navegador y no se guarda en Súper Cesta. Google recibe la clave y la imagen para procesar la solicitud según sus propias condiciones.</li>
-        <li>Al buscar un código de barras se envía ese código a Open Food Facts para consultar el producto. Esa consulta no proporciona un precio actual garantizado.</li>
+        <li>La cámara solo se solicita después de tu confirmación. Las imágenes capturadas para el lector de códigos se procesan en el dispositivo.</li>
+        <li>Al buscar un código de barras se envía ese código a Open Food Facts para consultar el catálogo público; no se envían fotos ni credenciales. El catálogo no garantiza precios actuales.</li>
         <li>La zona del foro es opcional: indica solo ciudad o municipio, nunca una dirección exacta.</li>
         <li>Esta versión no crea cuentas ni incorpora analítica o publicidad. Puedes borrar publicaciones desde el foro y vaciar la cesta desde su sección.</li>
       </ul>
