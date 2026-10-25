@@ -82,7 +82,7 @@
         </div>
         <span class="step" aria-hidden="true">EAN</span>
       </div>
-      <p class="muted">Escanea un EAN/UPC o escribe el código. Open Food Facts puede aportar datos del producto, pero no ofrece precios actuales fiables.</p>
+      <p class="muted">Escanea un EAN/UPC o escribe el código. Consultamos catálogos públicos de alimentación, cosmética y productos generales; ninguno garantiza precios actuales.</p>
 
       <div class="barcode-tools">
         <p class="eyebrow">PRODUCTOS ENVASADOS</p>
@@ -96,6 +96,7 @@
           <span class="scanner-copy"><strong>Escanear con cámara</strong><small>EAN-13 · EAN-8 · UPC-A</small></span>
           <span class="scanner-arrow" aria-hidden="true">→</span>
         </button>
+        <button id="start-label-camera" class="secondary-action label-camera-action" type="button">Fotografiar etiqueta del precio</button>
         <button id="cancel-scan" class="text-button barcode-camera-button" type="button" hidden>Cancelar escaneo</button>
         <p id="barcode-status" class="camera-status" role="status" aria-live="polite">La búsqueda consulta el catálogo público; el precio se introduce manualmente.</p>
       </div>
@@ -109,9 +110,30 @@
           <span class="frame-corner corner-bottom-right"></span>
           <span id="barcode-frame-message" class="barcode-frame-message">Alinea el código dentro del marco</span>
         </div>
+        <div id="label-camera-actions" class="label-camera-actions" hidden>
+          <button id="capture-price-label" class="primary-button" type="button">Capturar etiqueta</button>
+        </div>
       </div>
 
-      <p id="product-loading" class="camera-status" role="status" aria-live="polite" hidden>Consultando Open Food Facts…</p>
+      <section id="price-label-review" class="price-label-review" aria-labelledby="label-review-title" hidden>
+        <h3 id="label-review-title">Revisar etiqueta</h3>
+        <img id="label-photo-preview" class="label-photo-preview" alt="Foto local de la etiqueta del precio">
+        <p id="label-ocr-status" class="camera-status" role="status" aria-live="polite"></p>
+        <div id="label-ocr-result" class="label-ocr-result" hidden>
+          <p id="label-ocr-name" class="label-ocr-name"></p>
+          <div id="label-price-field" class="field" hidden>
+            <label for="label-price-candidate">Precio detectado (revísalo)</label>
+            <select id="label-price-candidate"></select>
+          </div>
+          <p class="muted">El OCR puede confundir el precio del producto con el precio por kilo. Confirma el importe y el supermercado antes de añadirlo.</p>
+        </div>
+        <div class="camera-actions">
+          <button id="read-price-label" class="primary-button" type="button">Leer etiqueta</button>
+          <button id="retake-price-label" class="text-button" type="button">Repetir foto</button>
+        </div>
+      </section>
+
+      <p id="product-loading" class="camera-status" role="status" aria-live="polite" hidden>Consultando catálogos…</p>
       <div id="scan-result" class="scan-result" aria-live="polite" hidden>
         <img id="scan-image" class="scan-image" alt="Imagen del producto" hidden>
         <strong id="scan-product"></strong>
@@ -143,7 +165,7 @@
           <div class="field">
             <label for="product-price">Precio por unidad (€)</label>
             <input id="product-price" type="number" min="0" step="0.01" placeholder="Precio pendiente" inputmode="decimal">
-            <span class="muted">Open Food Facts no garantiza precios actuales.</span>
+            <span class="muted">Los catálogos no garantizan precios actuales.</span>
           </div>
           <div class="field">
             <label id="quantity-label" for="product-quantity">Unidades</label>
@@ -296,7 +318,7 @@
       <ul>
         <li>La cesta y las publicaciones del foro se guardan en el almacenamiento local de este navegador. No se sincronizan ni se comparten con otros dispositivos.</li>
         <li>La cámara solo se solicita después de tu confirmación. Las imágenes capturadas para el lector de códigos se procesan en el dispositivo.</li>
-        <li>Al buscar un código de barras se envía ese código a Open Food Facts para consultar el catálogo público; no se envían fotos ni credenciales. El catálogo no garantiza precios actuales.</li>
+        <li>Al buscar un código se consulta sucesivamente Open Food Facts, Open Beauty Facts y Open Products Facts. Solo se envía el código, no fotos ni credenciales; ninguno garantiza precios actuales.</li>
         <li>La zona del foro es opcional: indica solo ciudad o municipio, nunca una dirección exacta.</li>
         <li>Esta versión no crea cuentas ni incorpora analítica o publicidad. Puedes borrar publicaciones desde el foro y vaciar la cesta desde su sección.</li>
       </ul>

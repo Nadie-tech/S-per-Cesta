@@ -24,6 +24,18 @@ const cameraPreview = document.getElementById("camera-preview");
 const barcodeFrame = document.getElementById("barcode-frame");
 const barcodeFrameMessage = document.getElementById("barcode-frame-message");
 const cancelScanButton = document.getElementById("cancel-scan");
+const startLabelCameraButton = document.getElementById("start-label-camera");
+const labelCameraActions = document.getElementById("label-camera-actions");
+const capturePriceLabelButton = document.getElementById("capture-price-label");
+const priceLabelReview = document.getElementById("price-label-review");
+const labelPhotoPreview = document.getElementById("label-photo-preview");
+const labelOcrStatus = document.getElementById("label-ocr-status");
+const labelOcrResult = document.getElementById("label-ocr-result");
+const labelOcrName = document.getElementById("label-ocr-name");
+const labelPriceField = document.getElementById("label-price-field");
+const labelPriceCandidate = document.getElementById("label-price-candidate");
+const readPriceLabelButton = document.getElementById("read-price-label");
+const retakePriceLabelButton = document.getElementById("retake-price-label");
 const scanAgainButton = document.getElementById("scan-again");
 const productLoading = document.getElementById("product-loading");
 const scanResult = document.getElementById("scan-result");
@@ -67,6 +79,9 @@ let barcodeControls = null;
 let barcodeReadActive = false;
 let scannerSession = 0;
 let scannedProduct = null;
+let labelCameraStream = null;
+let capturedLabelImage = "";
+let productPriceSource = "user";
 let forumPreviewUrl = "";
 
 const priceSourceLabels = {
@@ -290,14 +305,167 @@ function stopCamera() {
     barcodeControls.stop();
     barcodeControls = null;
   }
+  if (labelCameraStream) {
+    labelCameraStream.getTracks().forEach(track => track.stop());
+    labelCameraStream = null;
+  }
   barcodeReadActive = false;
   cameraPreview.srcObject = null;
   cameraView.hidden = true;
+  barcodeFrame.hidden = true;
+  labelCameraActions.hidden = true;
   barcodeFrame.classList.remove("is-detected");
   barcodeFrame.classList.add("is-searching");
   barcodeFrameMessage.textContent = "Alinea el código dentro del marco";
   cancelScanButton.hidden = true;
   scanBarcodeButton.hidden = false;
+  scanBarcodeButton.disabled = false;
+  startLabelCameraButton.disabled = false;
+}
+
+async function startLabelCamera() {
+  if (!window.confirm("¿Permites activar la cámara para fotografiar la etiqueta del producto? La foto se procesará en este dispositivo.")) {
+    setBarcodeStatus("No se activó la cámara. Puedes introducir el producto y el precio manualmente.");
+    return;
+  }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    setBarcodeStatus("Este navegador no permite usar la cámara. Puedes introducir los datos manualmente.", true);
+    return;
+  }
+
+  stopCamera();
+  const session = scannerSession;
+  startLabelCameraButton.disabled = true;
+  cancelScanButton.hidden = false;
+  setBarcodeStatus("Solicitando acceso a la cámara…");
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: "environment" } }
+    });
+    if (session !== scannerSession) {
+      stream.getTracks().forEach(track => track.stop());
+      return;
+    }
+
+    labelCameraStream = stream;
+    cameraPreview.srcObject = stream;
+    cameraView.hidden = false;
+    barcodeFrame.hidden = true;
+    labelCameraActions.hidden = false;
+    priceLabelReview.hidden = true;
+    setBarcodeStatus("Encuadra la etiqueta completa y pulsa «Capturar etiqueta».");
+    await cameraPreview.play();
+  } catch (error) {
+    stopCamera();
+    setBarcodeStatus(error.name === "NotAllowedError"
+      ? "No se concedió permiso para la cámara. Puedes introducir el precio manualmente."
+      : "No se pudo abrir la cámara. Revisa los permisos o introduce el precio manualmente.", true);
+  }
+}
+
+function capturePriceLabel() {
+  if (!cameraPreview.videoWidth || !cameraPreview.videoHeight) {
+    setBarcodeStatus("La cámara aún se está iniciando. Inténtalo de nuevo.", true);
+    return;
+  }
+
+  const canvas = document.createElement("canvas");
+  const scale = Math.min(1, 1600 / Math.max(cameraPreview.videoWidth, cameraPreview.videoHeight));
+  canvas.width = Math.round(cameraPreview.videoWidth * scale);
+  canvas.height = Math.round(cameraPreview.videoHeight * scale);
+  canvas.getContext("2d").drawImage(cameraPreview, 0, 0, canvas.width, canvas.height);
+  capturedLabelImage = canvas.toDataURL("image/jpeg", 0.9);
+  labelPhotoPreview.src = capturedLabelImage;
+  labelOcrResult.hidden = true;
+  priceLabelReview.hidden = false;
+  stopCamera();
+  setBarcodeStatus("Foto capturada. Se procesará en este dispositivo al pulsar «Leer etiqueta».");
+  labelOcrStatus.textContent = "La imagen todavía no se ha enviado ni leído.";
+}
+
+function findLabelPrices(text) {
+  const candidates = new Map();
+  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const pricePattern = /(?:€\s*)?(\d{1,3}[.,]\d{2})(?:\s*€)?/g;
+
+  for (const line of lines) {
+    for (const match of line.matchAll(pricePattern)) {
+      const start = match.index || 0;
+      const nearby = line.slice(Math.max(0, start - 8), Math.min(line.length, start + match[0].length + 12));
+      if (/\/\s*(?:kg|kilo|100\s*g|g|l|litro|ml)\b|(?:€|eur)\s*\/|por\s+(?:kg|kilo|l|litro)/i.test(nearby)) continue;
+
+      const amount = Number(match[1].replace(",", "."));
+      if (!Number.isFinite(amount) || amount <= 0 || amount > 1000) continue;
+      const key = amount.toFixed(2);
+      if (!candidates.has(key)) {
+        candidates.set(key, { amount, context: line.slice(0, 72) });
+      }
+    }
+  }
+
+  return [...candidates.values()];
+}
+
+function suggestProductNameFromLabel(text) {
+  return text.split(/\r?\n/)
+    .map(line => line.trim())
+    .find(line => /[a-záéíóúñ]{3,}/i.test(line) && line.length <= 70 && !/\d{5,}/.test(line)) || "";
+}
+
+async function readPriceLabel() {
+  if (!capturedLabelImage) {
+    labelOcrStatus.textContent = "Captura primero la etiqueta del precio.";
+    return;
+  }
+
+  readPriceLabelButton.disabled = true;
+  labelOcrResult.hidden = true;
+  labelOcrStatus.textContent = "Preparando lectura local… La primera carga puede tardar unos segundos.";
+  let worker;
+  try {
+    const { createWorker } = await import("https://cdn.jsdelivr.net/npm/tesseract.js@6/+esm");
+    worker = await createWorker("spa");
+    const { data } = await worker.recognize(capturedLabelImage);
+    const text = (data.text || "").trim();
+    const suggestedName = suggestProductNameFromLabel(text);
+    if (!nameInput.value.trim() && suggestedName) nameInput.value = suggestedName;
+    labelOcrName.textContent = suggestedName
+      ? `Texto/nombre sugerido: ${suggestedName}`
+      : "No se detectó un nombre claro; introdúcelo manualmente.";
+
+    const candidates = findLabelPrices(text);
+    labelPriceCandidate.replaceChildren();
+    labelPriceField.hidden = candidates.length === 0;
+    labelPriceCandidate.add(new Option("Selecciona el importe correcto", ""));
+    for (const candidate of candidates) {
+      labelPriceCandidate.add(new Option(`${money(candidate.amount)} · ${candidate.context}`, candidate.amount.toFixed(2)));
+    }
+
+    if (candidates.length === 1) {
+      labelPriceCandidate.value = candidates[0].amount.toFixed(2);
+      priceInput.value = candidates[0].amount.toFixed(2);
+      productPriceSource = "label";
+      scanPrice.textContent = `Precio leído de etiqueta: ${money(candidates[0].amount)} (revisar)`;
+    } else {
+      priceInput.value = "";
+      productPriceSource = "user";
+      scanPrice.textContent = candidates.length > 1 ? "Varios precios posibles: elige uno" : "Precio pendiente";
+    }
+
+    labelOcrResult.hidden = false;
+    labelOcrStatus.textContent = candidates.length === 0
+      ? "No se distinguió un precio fiable. Introdúcelo manualmente y confirma el supermercado."
+      : candidates.length === 1
+        ? "Precio sugerido. Revísalo y confirma el supermercado antes de añadirlo."
+        : "Detectamos varios importes. Elige el precio del producto, no el precio por kilo.";
+    if (!text) labelOcrStatus.textContent = "No se pudo leer el texto. Prueba otra foto o introduce los datos manualmente.";
+  } catch {
+    labelOcrStatus.textContent = "No se pudo leer la etiqueta. Comprueba la conexión para cargar el OCR o introduce el precio manualmente.";
+  } finally {
+    if (worker) await worker.terminate();
+    readPriceLabelButton.disabled = false;
+  }
 }
 
 function setBarcodeStatus(message, isError = false) {
@@ -316,34 +484,69 @@ async function lookupBarcode(code = barcodeInput.value.trim()) {
   lookupBarcodeButton.disabled = true;
   productLoading.hidden = false;
   scanResult.hidden = true;
+  productPriceSource = "user";
   scannedProduct = { barcode: code };
   nameInput.value = "";
   priceInput.value = "";
   supermarketInput.value = "";
   quantityInput.value = "1";
   quantityLabel.textContent = "Unidades";
-  setBarcodeStatus("Consultando el catálogo público…");
-  const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), 12000);
+  setBarcodeStatus("Buscando el producto en los catálogos públicos…");
+  const fields = "code,product_name,product_name_es,brands,quantity,categories,image_front_url";
+  const catalogs = [
+    { name: "Open Food Facts", host: "world.openfoodfacts.org" },
+    { name: "Open Beauty Facts", host: "world.openbeautyfacts.org" },
+    { name: "Open Products Facts", host: "world.openproductsfacts.org" }
+  ];
+  let catalogResult = null;
+  let hadCatalogResponse = false;
+  let connectionErrorCount = 0;
   try {
-    const fields = "code,product_name,product_name_es,brands,quantity,categories,image_front_url";
-    const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=${encodeURIComponent(fields)}`;
-    const response = await fetch(url, { signal: controller.signal });
-    if (!response.ok) throw new Error("No pudimos consultar Open Food Facts. Comprueba tu conexión o introduce el producto manualmente.");
-    const result = await response.json();
-    const product = result.product;
-    if (result.status !== 1 || !product || typeof product !== "object") {
+    for (const catalog of catalogs) {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 8000);
+      try {
+        const url = `https://${catalog.host}/api/v2/product/${encodeURIComponent(code)}.json?fields=${encodeURIComponent(fields)}`;
+        const response = await fetch(url, { signal: controller.signal });
+        if (response.status === 404) {
+          hadCatalogResponse = true;
+          continue;
+        }
+        if (!response.ok) {
+          hadCatalogResponse = true;
+          if (response.status >= 500) connectionErrorCount += 1;
+          continue;
+        }
+
+        const result = await response.json();
+        hadCatalogResponse = true;
+        if (result.status === 1 && result.product && typeof result.product === "object") {
+          catalogResult = { catalog, product: result.product };
+          break;
+        }
+      } catch (error) {
+        connectionErrorCount += 1;
+        if (error.name === "AbortError") continue;
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+    }
+
+    if (!catalogResult) {
       scannedProduct = { barcode: code };
       nameInput.value = "";
       priceInput.value = "";
       supermarketInput.value = "";
       quantityInput.value = "1";
       quantityLabel.textContent = "Unidades";
-      setBarcodeStatus("No encontramos ese producto. Puedes introducirlo manualmente.", true);
+      setBarcodeStatus(connectionErrorCount === catalogs.length && !hadCatalogResponse
+        ? "No pudimos conectar con los catálogos. Comprueba tu conexión o introduce el producto manualmente."
+        : "No encontramos ese producto en los catálogos consultados. Puedes introducirlo manualmente.", true);
       nameInput.focus();
       return;
     }
 
+    const { catalog, product } = catalogResult;
     const productName = product.product_name_es || product.product_name || "";
     scannedProduct = {
       barcode: product.code || code,
@@ -383,18 +586,15 @@ async function lookupBarcode(code = barcodeInput.value.trim()) {
     }
     scanResult.hidden = false;
     setBarcodeStatus(productName
-      ? "Producto encontrado. Revisa la ficha, indica el supermercado y añade el precio manualmente."
-      : "Código encontrado, pero el catálogo no incluye el nombre. Complétalo manualmente.");
+      ? `Producto encontrado en ${catalog.name}. Revisa la ficha, indica el supermercado y añade el precio manualmente.`
+      : `Código encontrado en ${catalog.name}, pero falta el nombre. Complétalo manualmente.`);
     if (productName) priceInput.focus();
     else nameInput.focus();
     productForm.scrollIntoView({ behavior: "smooth", block: "center" });
-  } catch (error) {
+  } catch {
     scannedProduct = { barcode: code };
-    setBarcodeStatus(error.name === "AbortError"
-      ? "La consulta tardó demasiado. Comprueba tu conexión o introduce el producto manualmente."
-      : "No pudimos consultar el producto. Comprueba tu conexión o introdúcelo manualmente.", true);
+    setBarcodeStatus("No pudimos consultar los catálogos. Comprueba tu conexión o introduce el producto manualmente.", true);
   } finally {
-    window.clearTimeout(timeoutId);
     productLoading.hidden = true;
     lookupBarcodeButton.disabled = false;
   }
@@ -422,13 +622,18 @@ async function startBarcodeScan() {
     scanBarcodeButton.disabled = true;
     cancelScanButton.hidden = false;
     cameraView.hidden = false;
+    barcodeFrame.hidden = false;
+    labelCameraActions.hidden = true;
     barcodeFrame.classList.remove("is-detected");
     barcodeFrame.classList.add("is-searching");
     barcodeFrameMessage.textContent = "Alinea el código dentro del marco";
     barcodeReadActive = true;
     const reader = new BrowserMultiFormatReader();
     setBarcodeStatus("Enfoca el código de barras dentro de la imagen.");
-    const controls = await reader.decodeFromVideoDevice(undefined, cameraPreview, (result, error, activeControls) => {
+    const controls = await reader.decodeFromConstraints(
+      { audio: false, video: { facingMode: { ideal: "environment" } } },
+      cameraPreview,
+      (result, error, activeControls) => {
       if (!barcodeReadActive) return;
       if (!result) {
         barcodeFrame.classList.add("is-searching");
@@ -454,7 +659,8 @@ async function startBarcodeScan() {
         barcodeInput.value = code;
         lookupBarcode(code);
       }, 650);
-    });
+      }
+    );
     if (barcodeReadActive) barcodeControls = controls;
     else controls.stop();
   } catch {
