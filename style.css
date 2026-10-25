@@ -604,6 +604,76 @@ button:focus-visible {
   font-weight: 700;
 }
 
+.supermarket-summary {
+  margin-top: 18px;
+  padding-top: 15px;
+  border-top: 1px solid #e7eee8;
+}
+
+.supermarket-summary-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.supermarket-summary-heading h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.supermarket-summary-heading .muted {
+  font-size: 10px;
+  text-align: right;
+}
+
+.supermarket-totals {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.supermarket-total-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid #eef1ec;
+}
+
+.supermarket-total-details {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.supermarket-total-name {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.supermarket-total-pending {
+  color: #89601c;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.supermarket-total-amount {
+  color: #166534;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.supermarket-pending {
+  margin: 10px 0 0;
+  color: #89601c;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .product-list {
   list-style: none;
   padding: 0;

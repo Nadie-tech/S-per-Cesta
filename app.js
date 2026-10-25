@@ -15,6 +15,9 @@ const productList = document.getElementById("product-list");
 const emptyState = document.getElementById("empty-state");
 const itemCount = document.getElementById("item-count");
 const clearButton = document.getElementById("clear-button");
+const supermarketSummary = document.getElementById("supermarket-summary");
+const supermarketTotals = document.getElementById("supermarket-totals");
+const supermarketPending = document.getElementById("supermarket-pending");
 const cameraView = document.getElementById("camera-view");
 const cameraPreview = document.getElementById("camera-preview");
 const barcodeFrame = document.getElementById("barcode-frame");
@@ -468,6 +471,60 @@ function calculateTotal() {
   );
 }
 
+function renderSupermarketSummary() {
+  supermarketSummary.hidden = products.length === 0;
+  supermarketTotals.replaceChildren();
+  const groups = new Map();
+  let pendingCount = 0;
+
+  for (const product of products) {
+    const supermarket = product.supermarket?.trim() || "Sin supermercado";
+    const key = supermarket.toLocaleLowerCase("es");
+    if (!groups.has(key)) {
+      groups.set(key, { name: supermarket, total: 0, knownCount: 0, pendingCount: 0 });
+    }
+
+    const group = groups.get(key);
+    if (Number.isFinite(product.price)) {
+      group.total += product.price * product.quantity;
+      group.knownCount += 1;
+    } else {
+      group.pendingCount += 1;
+      pendingCount += 1;
+    }
+  }
+
+  for (const group of groups.values()) {
+    const item = document.createElement("li");
+    item.className = "supermarket-total-row";
+
+    const details = document.createElement("div");
+    details.className = "supermarket-total-details";
+    const name = document.createElement("strong");
+    name.className = "supermarket-total-name";
+    name.textContent = group.name;
+    details.append(name);
+
+    if (group.pendingCount > 0) {
+      const pending = document.createElement("span");
+      pending.className = "supermarket-total-pending";
+      pending.textContent = `${group.pendingCount} ${group.pendingCount === 1 ? "producto" : "productos"} con precio pendiente`;
+      details.append(pending);
+    }
+
+    const amount = document.createElement("strong");
+    amount.className = "supermarket-total-amount";
+    amount.textContent = group.knownCount > 0 ? money(group.total) : "Pendiente";
+    item.append(details, amount);
+    supermarketTotals.append(item);
+  }
+
+  supermarketPending.hidden = pendingCount === 0;
+  supermarketPending.textContent = pendingCount > 0
+    ? `${pendingCount} ${pendingCount === 1 ? "producto tiene" : "productos tienen"} un precio pendiente y no está incluido en los importes conocidos.`
+    : "";
+}
+
 function render() {
   const total = calculateTotal();
   const pendingPriceCount = products.filter(product => !Number.isFinite(product.price)).length;
@@ -571,6 +628,7 @@ function render() {
     productList.append(item);
   });
 
+  renderSupermarketSummary();
   clearButton.hidden = products.length === 0;
 }
 
