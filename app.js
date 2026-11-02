@@ -24,18 +24,6 @@ const cameraPreview = document.getElementById("camera-preview");
 const barcodeFrame = document.getElementById("barcode-frame");
 const barcodeFrameMessage = document.getElementById("barcode-frame-message");
 const cancelScanButton = document.getElementById("cancel-scan");
-const startLabelCameraButton = document.getElementById("start-label-camera");
-const labelCameraActions = document.getElementById("label-camera-actions");
-const capturePriceLabelButton = document.getElementById("capture-price-label");
-const priceLabelReview = document.getElementById("price-label-review");
-const labelPhotoPreview = document.getElementById("label-photo-preview");
-const labelOcrStatus = document.getElementById("label-ocr-status");
-const labelOcrResult = document.getElementById("label-ocr-result");
-const labelOcrName = document.getElementById("label-ocr-name");
-const labelPriceField = document.getElementById("label-price-field");
-const labelPriceCandidate = document.getElementById("label-price-candidate");
-const readPriceLabelButton = document.getElementById("read-price-label");
-const retakePriceLabelButton = document.getElementById("retake-price-label");
 const scanAgainButton = document.getElementById("scan-again");
 const productLoading = document.getElementById("product-loading");
 const scanResult = document.getElementById("scan-result");
@@ -51,6 +39,20 @@ const barcodeInput = document.getElementById("barcode-code");
 const lookupBarcodeButton = document.getElementById("lookup-barcode");
 const scanBarcodeButton = document.getElementById("scan-barcode");
 const barcodeStatus = document.getElementById("barcode-status");
+const capturePriceLabelButton = document.getElementById("capture-price-label");
+const labelCameraActions = document.getElementById("label-camera-actions");
+const takePricePhotoButton = document.getElementById("take-price-photo");
+const cancelPriceCameraButton = document.getElementById("cancel-price-camera");
+const pricePhotoCanvas = document.getElementById("price-photo-canvas");
+const pricePhotoReview = document.getElementById("price-photo-review");
+const pricePhotoPreview = document.getElementById("price-photo-preview");
+const readPriceLabelButton = document.getElementById("read-price-label");
+const retakePricePhotoButton = document.getElementById("retake-price-photo");
+const discardPricePhotoButton = document.getElementById("discard-price-photo");
+const priceOcrStatus = document.getElementById("price-ocr-status");
+const priceCandidates = document.getElementById("price-candidates");
+const recognizedLabelDetails = document.getElementById("recognized-label-details");
+const recognizedLabelText = document.getElementById("recognized-label-text");
 const welcomeScreen = document.getElementById("welcome-screen");
 const enterAppButton = document.getElementById("enter-app");
 const appShell = document.getElementById("app-shell");
@@ -77,11 +79,16 @@ const forumList = document.getElementById("forum-list");
 
 let barcodeControls = null;
 let barcodeReadActive = false;
+let barcodeCameraActive = false;
 let scannerSession = 0;
 let scannedProduct = null;
 let labelCameraStream = null;
-let capturedLabelImage = "";
-let productPriceSource = "user";
+let priceLabelUsingScannerCamera = false;
+let capturedPricePhoto = "";
+let ocrWorker = null;
+let ocrWorkerPromise = null;
+let ocrSuggestedPrice = null;
+let priceFromLabel = false;
 let forumPreviewUrl = "";
 
 const priceSourceLabels = {
@@ -310,162 +317,38 @@ function stopCamera() {
     labelCameraStream = null;
   }
   barcodeReadActive = false;
+  barcodeCameraActive = false;
+  priceLabelUsingScannerCamera = false;
   cameraPreview.srcObject = null;
   cameraView.hidden = true;
-  barcodeFrame.hidden = true;
+  cameraView.classList.remove("reviewing-label");
+  barcodeFrame.hidden = false;
   labelCameraActions.hidden = true;
   barcodeFrame.classList.remove("is-detected");
   barcodeFrame.classList.add("is-searching");
   barcodeFrameMessage.textContent = "Alinea el código dentro del marco";
   cancelScanButton.hidden = true;
+  cancelScanButton.textContent = "Cancelar escaneo";
   scanBarcodeButton.hidden = false;
   scanBarcodeButton.disabled = false;
-  startLabelCameraButton.disabled = false;
 }
 
-async function startLabelCamera() {
-  if (!window.confirm("¿Permites activar la cámara para fotografiar la etiqueta del producto? La foto se procesará en este dispositivo.")) {
-    setBarcodeStatus("No se activó la cámara. Puedes introducir el producto y el precio manualmente.");
-    return;
-  }
-  if (!navigator.mediaDevices?.getUserMedia) {
-    setBarcodeStatus("Este navegador no permite usar la cámara. Puedes introducir los datos manualmente.", true);
-    return;
-  }
-
-  stopCamera();
-  const session = scannerSession;
-  startLabelCameraButton.disabled = true;
+function resumeBarcodeScanning(message = "Cámara activa. Enfoca el siguiente producto.", hideResult = true) {
+  if (!barcodeCameraActive || !barcodeControls) return;
+  priceLabelUsingScannerCamera = false;
+  barcodeReadActive = true;
+  cameraView.hidden = false;
+  cameraView.classList.remove("reviewing-label");
+  barcodeFrame.hidden = false;
+  barcodeFrame.classList.remove("is-detected");
+  barcodeFrame.classList.add("is-searching");
+  barcodeFrameMessage.textContent = "Alinea el código dentro del marco";
+  labelCameraActions.hidden = true;
+  if (hideResult) scanResult.hidden = true;
+  scanBarcodeButton.disabled = true;
   cancelScanButton.hidden = false;
-  setBarcodeStatus("Solicitando acceso a la cámara…");
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: { facingMode: { ideal: "environment" } }
-    });
-    if (session !== scannerSession) {
-      stream.getTracks().forEach(track => track.stop());
-      return;
-    }
-
-    labelCameraStream = stream;
-    cameraPreview.srcObject = stream;
-    cameraView.hidden = false;
-    barcodeFrame.hidden = true;
-    labelCameraActions.hidden = false;
-    priceLabelReview.hidden = true;
-    setBarcodeStatus("Encuadra la etiqueta completa y pulsa «Capturar etiqueta».");
-    await cameraPreview.play();
-  } catch (error) {
-    stopCamera();
-    setBarcodeStatus(error.name === "NotAllowedError"
-      ? "No se concedió permiso para la cámara. Puedes introducir el precio manualmente."
-      : "No se pudo abrir la cámara. Revisa los permisos o introduce el precio manualmente.", true);
-  }
-}
-
-function capturePriceLabel() {
-  if (!cameraPreview.videoWidth || !cameraPreview.videoHeight) {
-    setBarcodeStatus("La cámara aún se está iniciando. Inténtalo de nuevo.", true);
-    return;
-  }
-
-  const canvas = document.createElement("canvas");
-  const scale = Math.min(1, 1600 / Math.max(cameraPreview.videoWidth, cameraPreview.videoHeight));
-  canvas.width = Math.round(cameraPreview.videoWidth * scale);
-  canvas.height = Math.round(cameraPreview.videoHeight * scale);
-  canvas.getContext("2d").drawImage(cameraPreview, 0, 0, canvas.width, canvas.height);
-  capturedLabelImage = canvas.toDataURL("image/jpeg", 0.9);
-  labelPhotoPreview.src = capturedLabelImage;
-  labelOcrResult.hidden = true;
-  priceLabelReview.hidden = false;
-  stopCamera();
-  setBarcodeStatus("Foto capturada. Se procesará en este dispositivo al pulsar «Leer etiqueta».");
-  labelOcrStatus.textContent = "La imagen todavía no se ha enviado ni leído.";
-}
-
-function findLabelPrices(text) {
-  const candidates = new Map();
-  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-  const pricePattern = /(?:€\s*)?(\d{1,3}[.,]\d{2})(?:\s*€)?/g;
-
-  for (const line of lines) {
-    for (const match of line.matchAll(pricePattern)) {
-      const start = match.index || 0;
-      const nearby = line.slice(Math.max(0, start - 8), Math.min(line.length, start + match[0].length + 12));
-      if (/\/\s*(?:kg|kilo|100\s*g|g|l|litro|ml)\b|(?:€|eur)\s*\/|por\s+(?:kg|kilo|l|litro)/i.test(nearby)) continue;
-
-      const amount = Number(match[1].replace(",", "."));
-      if (!Number.isFinite(amount) || amount <= 0 || amount > 1000) continue;
-      const key = amount.toFixed(2);
-      if (!candidates.has(key)) {
-        candidates.set(key, { amount, context: line.slice(0, 72) });
-      }
-    }
-  }
-
-  return [...candidates.values()];
-}
-
-function suggestProductNameFromLabel(text) {
-  return text.split(/\r?\n/)
-    .map(line => line.trim())
-    .find(line => /[a-záéíóúñ]{3,}/i.test(line) && line.length <= 70 && !/\d{5,}/.test(line)) || "";
-}
-
-async function readPriceLabel() {
-  if (!capturedLabelImage) {
-    labelOcrStatus.textContent = "Captura primero la etiqueta del precio.";
-    return;
-  }
-
-  readPriceLabelButton.disabled = true;
-  labelOcrResult.hidden = true;
-  labelOcrStatus.textContent = "Preparando lectura local… La primera carga puede tardar unos segundos.";
-  let worker;
-  try {
-    const { createWorker } = await import("https://cdn.jsdelivr.net/npm/tesseract.js@6/+esm");
-    worker = await createWorker("spa");
-    const { data } = await worker.recognize(capturedLabelImage);
-    const text = (data.text || "").trim();
-    const suggestedName = suggestProductNameFromLabel(text);
-    if (!nameInput.value.trim() && suggestedName) nameInput.value = suggestedName;
-    labelOcrName.textContent = suggestedName
-      ? `Texto/nombre sugerido: ${suggestedName}`
-      : "No se detectó un nombre claro; introdúcelo manualmente.";
-
-    const candidates = findLabelPrices(text);
-    labelPriceCandidate.replaceChildren();
-    labelPriceField.hidden = candidates.length === 0;
-    labelPriceCandidate.add(new Option("Selecciona el importe correcto", ""));
-    for (const candidate of candidates) {
-      labelPriceCandidate.add(new Option(`${money(candidate.amount)} · ${candidate.context}`, candidate.amount.toFixed(2)));
-    }
-
-    if (candidates.length === 1) {
-      labelPriceCandidate.value = candidates[0].amount.toFixed(2);
-      priceInput.value = candidates[0].amount.toFixed(2);
-      productPriceSource = "label";
-      scanPrice.textContent = `Precio leído de etiqueta: ${money(candidates[0].amount)} (revisar)`;
-    } else {
-      priceInput.value = "";
-      productPriceSource = "user";
-      scanPrice.textContent = candidates.length > 1 ? "Varios precios posibles: elige uno" : "Precio pendiente";
-    }
-
-    labelOcrResult.hidden = false;
-    labelOcrStatus.textContent = candidates.length === 0
-      ? "No se distinguió un precio fiable. Introdúcelo manualmente y confirma el supermercado."
-      : candidates.length === 1
-        ? "Precio sugerido. Revísalo y confirma el supermercado antes de añadirlo."
-        : "Detectamos varios importes. Elige el precio del producto, no el precio por kilo.";
-    if (!text) labelOcrStatus.textContent = "No se pudo leer el texto. Prueba otra foto o introduce los datos manualmente.";
-  } catch {
-    labelOcrStatus.textContent = "No se pudo leer la etiqueta. Comprueba la conexión para cargar el OCR o introduce el precio manualmente.";
-  } finally {
-    if (worker) await worker.terminate();
-    readPriceLabelButton.disabled = false;
-  }
+  cancelScanButton.textContent = "Detener cámara";
+  setBarcodeStatus(message);
 }
 
 function setBarcodeStatus(message, isError = false) {
@@ -484,7 +367,6 @@ async function lookupBarcode(code = barcodeInput.value.trim()) {
   lookupBarcodeButton.disabled = true;
   productLoading.hidden = false;
   scanResult.hidden = true;
-  productPriceSource = "user";
   scannedProduct = { barcode: code };
   nameInput.value = "";
   priceInput.value = "";
@@ -601,6 +483,10 @@ async function lookupBarcode(code = barcodeInput.value.trim()) {
 }
 
 async function startBarcodeScan() {
+  if (barcodeCameraActive && barcodeControls) {
+    resumeBarcodeScanning();
+    return;
+  }
   if (barcodeReadActive) return;
   if (!window.confirm("¿Permites activar la cámara para leer un código de barras?")) {
     setBarcodeStatus("No se activó la cámara. Puedes escribir el código manualmente.");
@@ -615,6 +501,7 @@ async function startBarcodeScan() {
   const session = scannerSession;
   scanBarcodeButton.disabled = true;
   cancelScanButton.hidden = false;
+  cancelScanButton.textContent = "Cancelar escaneo";
   setBarcodeStatus("Cargando lector de códigos…");
   try {
     const { BrowserMultiFormatReader } = await import("https://cdn.jsdelivr.net/npm/@zxing/browser@0.2.1/+esm");
@@ -622,16 +509,23 @@ async function startBarcodeScan() {
     scanBarcodeButton.disabled = true;
     cancelScanButton.hidden = false;
     cameraView.hidden = false;
-    barcodeFrame.hidden = false;
-    labelCameraActions.hidden = true;
     barcodeFrame.classList.remove("is-detected");
     barcodeFrame.classList.add("is-searching");
     barcodeFrameMessage.textContent = "Alinea el código dentro del marco";
     barcodeReadActive = true;
+    barcodeCameraActive = true;
     const reader = new BrowserMultiFormatReader();
     setBarcodeStatus("Enfoca el código de barras dentro de la imagen.");
     const controls = await reader.decodeFromConstraints(
-      { audio: false, video: { facingMode: { ideal: "environment" } } },
+      {
+        audio: false,
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          frameRate: { ideal: 30, max: 60 }
+        }
+      },
       cameraPreview,
       (result, error, activeControls) => {
       if (!barcodeReadActive) return;
@@ -647,28 +541,230 @@ async function startBarcodeScan() {
       barcodeFrame.classList.remove("is-searching");
       barcodeFrame.classList.add("is-detected");
       barcodeFrameMessage.textContent = "Código bien encuadrado";
-      setBarcodeStatus("Código detectado. Consultando el catálogo…");
+      setBarcodeStatus("Código detectado. Cámara activa; revisa el producto antes de continuar.");
       window.setTimeout(() => {
         if (session !== scannerSession) return;
-        activeControls?.stop();
-        barcodeControls = null;
-        cameraPreview.srcObject = null;
-        cameraView.hidden = true;
-        cancelScanButton.hidden = true;
-        scanBarcodeButton.disabled = false;
         barcodeInput.value = code;
         lookupBarcode(code);
       }, 650);
       }
     );
-    if (barcodeReadActive) barcodeControls = controls;
-    else controls.stop();
+    if (session === scannerSession) {
+      barcodeControls = controls;
+      barcodeCameraActive = true;
+      cancelScanButton.textContent = "Detener cámara";
+      const videoTrack = cameraPreview.srcObject?.getVideoTracks?.()[0];
+      const focusModes = videoTrack?.getCapabilities?.().focusMode;
+      if (Array.isArray(focusModes) && focusModes.includes("continuous")) {
+        videoTrack.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {});
+      }
+    } else {
+      controls.stop();
+    }
   } catch {
     stopCamera();
     scanBarcodeButton.disabled = false;
     cancelScanButton.hidden = true;
     setBarcodeStatus("No se pudo acceder a la cámara. Revisa los permisos o escribe el código manualmente.", true);
   }
+}
+
+async function startPriceLabelCamera() {
+  const reuseScannerCamera = barcodeCameraActive && Boolean(barcodeControls);
+  if (!reuseScannerCamera && !window.confirm("¿Permites usar la cámara para fotografiar la etiqueta del precio? La foto se leerá en este dispositivo y no se enviará.")) {
+    priceOcrStatus.textContent = "No se activó la cámara. Puedes introducir el precio manualmente.";
+    return;
+  }
+  if (!reuseScannerCamera && !navigator.mediaDevices?.getUserMedia) {
+    priceOcrStatus.textContent = "Este navegador no permite usar la cámara. Puedes introducir el precio manualmente.";
+    return;
+  }
+
+  pricePhotoReview.hidden = true;
+  if (reuseScannerCamera) {
+    barcodeReadActive = false;
+    priceLabelUsingScannerCamera = true;
+    cameraView.hidden = false;
+    cameraView.classList.remove("reviewing-label");
+    barcodeFrame.hidden = true;
+    labelCameraActions.hidden = false;
+    priceOcrStatus.textContent = "Cámara activa. Centra el nombre y la etiqueta del precio.";
+    return;
+  }
+
+  stopCamera();
+  const session = scannerSession;
+  priceOcrStatus.textContent = "Activando cámara…";
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: "environment" } }
+    });
+    if (session !== scannerSession) {
+      stream.getTracks().forEach(track => track.stop());
+      return;
+    }
+
+    labelCameraStream = stream;
+    cameraPreview.srcObject = stream;
+    cameraView.hidden = false;
+    barcodeFrame.hidden = true;
+    labelCameraActions.hidden = false;
+    await cameraPreview.play();
+    priceOcrStatus.textContent = "Centra el nombre y la etiqueta del precio en la foto.";
+  } catch (error) {
+    stopCamera();
+    priceOcrStatus.textContent = error.name === "NotAllowedError"
+      ? "No se concedió permiso para la cámara. Puedes introducir el precio manualmente."
+      : "No se pudo abrir la cámara. Comprueba los permisos o introduce el precio manualmente.";
+  }
+}
+
+function capturePriceLabelPhoto() {
+  const width = cameraPreview.videoWidth;
+  const height = cameraPreview.videoHeight;
+  if (!width || !height) {
+    priceOcrStatus.textContent = "La cámara aún se está iniciando. Inténtalo otra vez.";
+    return;
+  }
+
+  const scale = Math.min(1, 1600 / Math.max(width, height));
+  pricePhotoCanvas.width = Math.round(width * scale);
+  pricePhotoCanvas.height = Math.round(height * scale);
+  pricePhotoCanvas.getContext("2d").drawImage(cameraPreview, 0, 0, pricePhotoCanvas.width, pricePhotoCanvas.height);
+  capturedPricePhoto = pricePhotoCanvas.toDataURL("image/jpeg", 0.9);
+  pricePhotoPreview.src = capturedPricePhoto;
+  pricePhotoReview.hidden = false;
+  priceCandidates.replaceChildren();
+  recognizedLabelDetails.hidden = true;
+  priceOcrStatus.textContent = "Foto capturada. La imagen se analizará en el dispositivo.";
+  labelCameraActions.hidden = true;
+  if (priceLabelUsingScannerCamera && barcodeCameraActive) {
+    cameraView.hidden = false;
+    cameraView.classList.add("reviewing-label");
+    barcodeFrame.hidden = true;
+    setBarcodeStatus("Cámara activa. Revisa la etiqueta; al añadir el producto seguirá el escaneo.");
+  } else {
+    stopCamera();
+  }
+}
+
+async function getOcrWorker() {
+  if (!ocrWorkerPromise) {
+    ocrWorkerPromise = (async () => {
+      const { createWorker } = await import("https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/+esm");
+      ocrWorker = await createWorker("spa+eng", 1, {
+        logger: progress => {
+          if (progress.status === "recognizing text") {
+            const percent = Math.round((progress.progress || 0) * 100);
+            priceOcrStatus.textContent = `Leyendo la etiqueta en este dispositivo… ${percent}%`;
+          } else if (progress.status?.includes("traineddata")) {
+            priceOcrStatus.textContent = "Preparando lectura en español e inglés…";
+          }
+        }
+      });
+      return ocrWorker;
+    })().catch(error => {
+      ocrWorkerPromise = null;
+      throw error;
+    });
+  }
+  return ocrWorkerPromise;
+}
+
+function extractLabelPriceCandidates(text) {
+  const candidates = [];
+  const expression = /(\d{1,4}[,.]\d{2})\s*(?:€|EUR)?/giu;
+  for (const match of text.matchAll(expression)) {
+    const start = match.index || 0;
+    const before = text.slice(Math.max(0, start - 12), start);
+    const after = text.slice(start + match[0].length, start + match[0].length + 8);
+    const unitContext = `${before} ${after}`;
+    const context = text.slice(Math.max(0, start - 8), Math.min(text.length, start + match[0].length + 8));
+    if (/\/\s*(?:kg|100\s*g|100g|l|ud)\b|\bpor\s+(?:kg|litro|unidad)|\b(?:kg|100g)\s*\//i.test(unitContext)) continue;
+
+    const value = Number(match[1].replace(",", "."));
+    if (!Number.isFinite(value) || value < 0 || value > 9999) continue;
+    if (candidates.some(candidate => candidate.value === value)) continue;
+    candidates.push({ value, context: context.replace(/\s+/g, " ").trim() });
+  }
+  return candidates;
+}
+
+function chooseLabelPrice(value) {
+  priceInput.value = value.toFixed(2);
+  ocrSuggestedPrice = value;
+  priceFromLabel = true;
+  scanPrice.textContent = `Lectura OCR: ${money(value)} · confirma el importe`;
+  priceOcrStatus.textContent = `Lectura orientativa: ${money(value)}. Revisa que sea el precio del producto y elige el supermercado.`;
+  priceInput.focus();
+}
+
+async function readPriceLabel() {
+  if (!capturedPricePhoto) {
+    priceOcrStatus.textContent = "Toma una foto de la etiqueta primero.";
+    return;
+  }
+
+  readPriceLabelButton.disabled = true;
+  retakePricePhotoButton.disabled = true;
+  discardPricePhotoButton.disabled = true;
+  priceCandidates.replaceChildren();
+  priceOcrStatus.textContent = "Preparando OCR en el dispositivo…";
+  try {
+    const worker = await getOcrWorker();
+    const { data } = await worker.recognize(capturedPricePhoto);
+    const text = typeof data.text === "string" ? data.text.trim() : "";
+    recognizedLabelText.textContent = text || "No se reconoció texto legible.";
+    recognizedLabelDetails.hidden = !text;
+
+    const candidates = extractLabelPriceCandidates(text);
+    if (candidates.length === 0) {
+      priceOcrStatus.textContent = "No detectamos un precio claro. Puedes escribirlo manualmente.";
+      return;
+    }
+
+    if (candidates.length === 1 && data.confidence >= 55) {
+      chooseLabelPrice(candidates[0].value);
+      return;
+    }
+
+    priceOcrStatus.textContent = "Encontramos varios importes o la lectura tiene poca confianza. Elige el precio del producto:";
+    for (const candidate of candidates) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "price-candidate";
+      button.textContent = `Usar ${money(candidate.value)}${candidate.context ? ` · ${candidate.context}` : ""}`;
+      button.addEventListener("click", () => chooseLabelPrice(candidate.value));
+      priceCandidates.append(button);
+    }
+  } catch {
+    priceOcrStatus.textContent = "No se pudo leer la foto. Inténtalo con más luz o introduce el precio manualmente.";
+  } finally {
+    readPriceLabelButton.disabled = false;
+    retakePricePhotoButton.disabled = false;
+    discardPricePhotoButton.disabled = false;
+  }
+}
+
+function discardPriceLabelPhoto() {
+  const resumeScanner = priceLabelUsingScannerCamera && barcodeCameraActive;
+  if (priceFromLabel && Number(priceInput.value) === ocrSuggestedPrice) {
+    priceInput.value = "";
+    scanPrice.textContent = "Precio pendiente";
+  }
+  capturedPricePhoto = "";
+  ocrSuggestedPrice = null;
+  priceFromLabel = false;
+  pricePhotoPreview.removeAttribute("src");
+  pricePhotoReview.hidden = true;
+  priceCandidates.replaceChildren();
+  recognizedLabelText.textContent = "";
+  recognizedLabelDetails.hidden = true;
+  priceOcrStatus.textContent = "";
+  priceLabelUsingScannerCamera = false;
+  cameraView.classList.remove("reviewing-label");
+  if (resumeScanner) resumeBarcodeScanning("Foto descartada. Cámara activa; puedes continuar el escaneo.", false);
 }
 
 function calculateTotal() {
@@ -809,7 +905,11 @@ function render() {
     if (product.netQuantity) detailParts.push(product.netQuantity);
     if (product.barcode) detailParts.push(`EAN/UPC ${product.barcode}`);
     if (product.supermarket) detailParts.push(`En ${product.supermarket}`);
-    if (hasPrice) detailParts.push(product.priceSource === "verified" ? "Precio verificado" : "Precio introducido por ti");
+    if (hasPrice) {
+      detailParts.push(product.priceSource === "label"
+        ? "Lectura OCR de etiqueta · revisada"
+        : product.priceSource === "verified" ? "Precio verificado" : "Precio introducido por ti");
+    }
     detail.textContent = detailParts.join(" · ");
 
     const subtotal = document.createElement("span");
@@ -888,7 +988,7 @@ productForm.addEventListener("submit", event => {
     netQuantity: scannedProduct?.quantityDescription || "",
     category: scannedProduct?.category || "",
     imageUrl: scannedProduct?.imageUrl || "",
-    priceSource: price === null ? "pending" : "user",
+    priceSource: price === null ? "pending" : priceFromLabel ? "label" : "user",
     priceUpdatedAt: price === null ? null : new Date().toISOString()
   });
 
@@ -899,10 +999,20 @@ productForm.addEventListener("submit", event => {
   quantityInput.value = 1;
   quantityLabel.textContent = "Unidades";
   scannedProduct = null;
+  capturedPricePhoto = "";
+  ocrSuggestedPrice = null;
+  priceFromLabel = false;
+  pricePhotoPreview.removeAttribute("src");
+  pricePhotoReview.hidden = true;
+  priceCandidates.replaceChildren();
+  recognizedLabelText.textContent = "";
+  recognizedLabelDetails.hidden = true;
+  priceOcrStatus.textContent = "";
   scanImage.removeAttribute("src");
   scanImage.hidden = true;
   scanResult.hidden = true;
   nameInput.focus();
+  resumeBarcodeScanning("Producto añadido. Cámara activa; enfoca el siguiente producto.");
 });
 
 scanBarcodeButton.addEventListener("click", startBarcodeScan);
@@ -916,7 +1026,41 @@ scanAgainButton.addEventListener("click", () => {
   scanResult.hidden = true;
   startBarcodeScan();
 });
-window.addEventListener("pagehide", stopCamera);
+capturePriceLabelButton.addEventListener("click", startPriceLabelCamera);
+takePricePhotoButton.addEventListener("click", capturePriceLabelPhoto);
+cancelPriceCameraButton.addEventListener("click", () => {
+  if (priceLabelUsingScannerCamera && barcodeCameraActive) {
+    labelCameraActions.hidden = true;
+    cameraView.classList.remove("reviewing-label");
+    barcodeFrame.hidden = false;
+    priceLabelUsingScannerCamera = false;
+    resumeBarcodeScanning("Foto cancelada. Cámara activa; puedes seguir escaneando.", false);
+  } else {
+    stopCamera();
+    priceOcrStatus.textContent = "Cámara cerrada. La foto no se guardó.";
+  }
+});
+readPriceLabelButton.addEventListener("click", readPriceLabel);
+retakePricePhotoButton.addEventListener("click", () => {
+  capturedPricePhoto = "";
+  pricePhotoReview.hidden = true;
+  startPriceLabelCamera();
+});
+discardPricePhotoButton.addEventListener("click", discardPriceLabelPhoto);
+priceInput.addEventListener("input", () => {
+  if (priceFromLabel && Number(priceInput.value) !== ocrSuggestedPrice) {
+    priceFromLabel = false;
+    ocrSuggestedPrice = null;
+  }
+  const value = priceInput.valueAsNumber;
+  scanPrice.textContent = priceInput.value === "" || !Number.isFinite(value)
+    ? "Precio pendiente"
+    : `${priceFromLabel ? "Lectura OCR" : "Precio introducido"}: ${money(value)}`;
+});
+window.addEventListener("pagehide", () => {
+  stopCamera();
+  if (ocrWorker) ocrWorker.terminate().catch(() => {});
+});
 
 clearButton.addEventListener("click", () => {
   if (!confirm("¿Quieres vaciar toda la cesta?")) {

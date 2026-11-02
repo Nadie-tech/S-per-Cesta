@@ -96,7 +96,11 @@
           <span class="scanner-copy"><strong>Escanear con cámara</strong><small>EAN-13 · EAN-8 · UPC-A</small></span>
           <span class="scanner-arrow" aria-hidden="true">→</span>
         </button>
-        <button id="start-label-camera" class="secondary-action label-camera-action" type="button">Fotografiar etiqueta del precio</button>
+        <button id="capture-price-label" class="secondary-action price-label-button" type="button">
+          <span class="price-label-icon" aria-hidden="true">📸</span>
+          <span class="price-label-copy"><strong>Fotografiar etiqueta</strong><small>Leer nombre y precio</small></span>
+          <span class="price-label-arrow" aria-hidden="true">→</span>
+        </button>
         <button id="cancel-scan" class="text-button barcode-camera-button" type="button" hidden>Cancelar escaneo</button>
         <p id="barcode-status" class="camera-status" role="status" aria-live="polite">La búsqueda consulta el catálogo público; el precio se introduce manualmente.</p>
       </div>
@@ -111,27 +115,27 @@
           <span id="barcode-frame-message" class="barcode-frame-message">Alinea el código dentro del marco</span>
         </div>
         <div id="label-camera-actions" class="label-camera-actions" hidden>
-          <button id="capture-price-label" class="primary-button" type="button">Capturar etiqueta</button>
+          <p>Enfoca la etiqueta del precio completa.</p>
+          <button id="take-price-photo" class="primary-button" type="button">Tomar foto de la etiqueta</button>
+          <button id="cancel-price-camera" class="text-button" type="button">Cancelar cámara</button>
         </div>
       </div>
 
-      <section id="price-label-review" class="price-label-review" aria-labelledby="label-review-title" hidden>
-        <h3 id="label-review-title">Revisar etiqueta</h3>
-        <img id="label-photo-preview" class="label-photo-preview" alt="Foto local de la etiqueta del precio">
-        <p id="label-ocr-status" class="camera-status" role="status" aria-live="polite"></p>
-        <div id="label-ocr-result" class="label-ocr-result" hidden>
-          <p id="label-ocr-name" class="label-ocr-name"></p>
-          <div id="label-price-field" class="field" hidden>
-            <label for="label-price-candidate">Precio detectado (revísalo)</label>
-            <select id="label-price-candidate"></select>
-          </div>
-          <p class="muted">El OCR puede confundir el precio del producto con el precio por kilo. Confirma el importe y el supermercado antes de añadirlo.</p>
+      <canvas id="price-photo-canvas" hidden></canvas>
+      <div id="price-photo-review" class="price-photo-review" hidden>
+        <img id="price-photo-preview" alt="Vista previa de la etiqueta del precio">
+        <div class="price-photo-actions">
+          <button id="read-price-label" class="primary-button" type="button">Leer etiqueta en el dispositivo</button>
+          <button id="retake-price-photo" class="text-button" type="button">Repetir foto</button>
+          <button id="discard-price-photo" class="text-button" type="button">Descartar foto</button>
         </div>
-        <div class="camera-actions">
-          <button id="read-price-label" class="primary-button" type="button">Leer etiqueta</button>
-          <button id="retake-price-label" class="text-button" type="button">Repetir foto</button>
-        </div>
-      </section>
+        <p id="price-ocr-status" class="camera-status" role="status" aria-live="polite"></p>
+        <div id="price-candidates" class="price-candidates"></div>
+        <details id="recognized-label-details" class="recognized-label-details" hidden>
+          <summary>Texto reconocido para revisar</summary>
+          <pre id="recognized-label-text"></pre>
+        </details>
+      </div>
 
       <p id="product-loading" class="camera-status" role="status" aria-live="polite" hidden>Consultando catálogos…</p>
       <div id="scan-result" class="scan-result" aria-live="polite" hidden>
@@ -317,7 +321,8 @@
       <h2 id="privacy-title">Privacidad y datos</h2>
       <ul>
         <li>La cesta y las publicaciones del foro se guardan en el almacenamiento local de este navegador. No se sincronizan ni se comparten con otros dispositivos.</li>
-        <li>La cámara solo se solicita después de tu confirmación. Las imágenes capturadas para el lector de códigos se procesan en el dispositivo.</li>
+        <li>La cámara solo se solicita después de tu confirmación. La foto de la etiqueta se procesa en este dispositivo y permanece en la vista previa hasta que la descartes o cierres la página; no se sube a un servicio de OCR.</li>
+        <li>El OCR descarga la librería y los datos de idioma desde un CDN la primera vez. La imagen no se transmite junto con esa descarga.</li>
         <li>Al buscar un código se consulta sucesivamente Open Food Facts, Open Beauty Facts y Open Products Facts. Solo se envía el código, no fotos ni credenciales; ninguno garantiza precios actuales.</li>
         <li>La zona del foro es opcional: indica solo ciudad o municipio, nunca una dirección exacta.</li>
         <li>Esta versión no crea cuentas ni incorpora analítica o publicidad. Puedes borrar publicaciones desde el foro y vaciar la cesta desde su sección.</li>
@@ -335,7 +340,7 @@
 
     <section class="section policy-section" aria-labelledby="terms-title">
       <h2 id="terms-title">Uso y exactitud</h2>
-      <p class="muted">La identificación por IA y los precios pueden ser incorrectos. Comprueba el producto, el supermercado y el precio antes de comprar. Súper Cesta es una herramienta orientativa; no garantiza la disponibilidad ni el precio en tienda.</p>
+      <p class="muted">El lector puede confundir texto, etiquetas y precios. Comprueba el producto, el supermercado y el importe antes de añadirlo. Súper Cesta no garantiza la disponibilidad ni el precio en tienda.</p>
     </section>
   </main>
 
