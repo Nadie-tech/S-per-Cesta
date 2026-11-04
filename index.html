@@ -41,6 +41,12 @@
       <button type="button" data-view="basket">Mi cesta</button>
       <button type="button" data-view="forum">Foro de precios</button>
       <button type="button" data-view="policies">Privacidad y políticas</button>
+      <button id="open-tutorial" type="button">Ver tutorial</button>
+      <label class="theme-menu-control" for="theme-toggle">
+        <span>Modo oscuro</span>
+        <input id="theme-toggle" type="checkbox" role="switch" aria-label="Activar modo oscuro">
+        <span class="theme-switch-track" aria-hidden="true"></span>
+      </label>
     </nav>
   </header>
 
@@ -82,7 +88,7 @@
         </div>
         <span class="step" aria-hidden="true">EAN</span>
       </div>
-      <p class="muted">Escanea un EAN/UPC o escribe el código. Consultamos catálogos públicos de alimentación, cosmética y productos generales; ninguno garantiza precios actuales.</p>
+      <p class="muted">Escanea un EAN/UPC o escribe el código. Consultamos catálogos públicos de alimentación, higiene, cosmética y productos del hogar; la cobertura depende de cada catálogo y no garantiza que aparezcan todos los productos ni sus precios.</p>
 
       <div class="barcode-tools">
         <p class="eyebrow">PRODUCTOS ENVASADOS</p>
@@ -114,8 +120,16 @@
           <span class="frame-corner corner-bottom-right"></span>
           <span id="barcode-frame-message" class="barcode-frame-message">Alinea el código dentro del marco</span>
         </div>
+        <div id="label-frame" class="label-frame" aria-hidden="true" hidden>
+          <span class="frame-corner corner-top-left"></span>
+          <span class="frame-corner corner-top-right"></span>
+          <span class="frame-corner corner-bottom-left"></span>
+          <span class="frame-corner corner-bottom-right"></span>
+          <span class="label-frame-message">Centra el nombre y el precio de la etiqueta</span>
+        </div>
         <div id="label-camera-actions" class="label-camera-actions" hidden>
           <p>Enfoca la etiqueta del precio completa.</p>
+          <button id="toggle-torch" class="secondary-action torch-button" type="button" hidden>Encender linterna</button>
           <button id="take-price-photo" class="primary-button" type="button">Tomar foto de la etiqueta</button>
           <button id="cancel-price-camera" class="text-button" type="button">Cancelar cámara</button>
         </div>
@@ -123,7 +137,15 @@
 
       <canvas id="price-photo-canvas" hidden></canvas>
       <div id="price-photo-review" class="price-photo-review" hidden>
-        <img id="price-photo-preview" alt="Vista previa de la etiqueta del precio">
+        <div id="price-crop-editor" class="price-crop-editor">
+          <img id="price-photo-preview" alt="Vista previa de la etiqueta del precio">
+          <div id="price-crop-selection" class="price-crop-selection" aria-hidden="true" hidden></div>
+        </div>
+        <div class="crop-controls">
+          <span>Área de lectura</span>
+          <button id="reset-price-crop" class="text-button" type="button">Usar foto completa</button>
+        </div>
+        <p class="muted crop-hint">Arrastra sobre la foto para seleccionar la zona del precio.</p>
         <div class="price-photo-actions">
           <button id="read-price-label" class="primary-button" type="button">Leer etiqueta en el dispositivo</button>
           <button id="retake-price-photo" class="text-button" type="button">Repetir foto</button>
@@ -177,19 +199,38 @@
           </div>
         </div>
 
-        <div class="field">
-          <label for="product-supermarket">Supermercado del precio</label>
-          <input id="product-supermarket" type="text" list="supermarket-options" maxlength="60" placeholder="Elige o escribe el supermercado" required>
-          <datalist id="supermarket-options">
-            <option value="Mercadona"></option>
-            <option value="Carrefour"></option>
-            <option value="Lidl"></option>
-            <option value="Aldi"></option>
-            <option value="DIA"></option>
-            <option value="Consum"></option>
-            <option value="Alcampo"></option>
-          </datalist>
-        </div>
+        <details class="optional-price-details">
+          <summary>Detalles del precio (opcionales)</summary>
+          <div class="optional-price-fields">
+            <div class="form-row price-meta-row">
+              <div class="field">
+                <label for="price-observed-date">Fecha del precio</label>
+                <input id="price-observed-date" type="date">
+              </div>
+              <div class="field">
+                <label for="price-type">Tipo de precio</label>
+                <select id="price-type">
+                  <option value="regular">Normal</option>
+                  <option value="offer">Oferta</option>
+                  <option value="loyalty">Con tarjeta</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label for="product-supermarket">Supermercado del precio</label>
+              <input id="product-supermarket" type="text" list="supermarket-options" maxlength="60" placeholder="Elige o escribe el supermercado">
+              <datalist id="supermarket-options">
+                <option value="Mercadona"></option>
+                <option value="Carrefour"></option>
+                <option value="Lidl"></option>
+                <option value="Aldi"></option>
+                <option value="DIA"></option>
+                <option value="Consum"></option>
+                <option value="Alcampo"></option>
+              </datalist>
+            </div>
+          </div>
+        </details>
 
         <button class="primary-button" type="submit"><span aria-hidden="true">+</span> Añadir a mi cesta</button>
       </form>
@@ -201,7 +242,21 @@
           <p class="eyebrow">TU COMPRA</p>
           <h2 id="basket-heading">Mi cesta <span id="item-count" class="count">0 productos</span></h2>
         </div>
+      </div>
+
+      <div class="basket-toolbar">
+        <label class="shopping-mode-control" for="shopping-mode">
+          <input id="shopping-mode" type="checkbox">
+          Modo compra
+        </label>
+        <button id="save-last-purchase" class="secondary-action" type="button" hidden>Guardar compra actual</button>
+        <button id="repeat-last-purchase" class="secondary-action" type="button" hidden>Repetir última compra</button>
         <button id="clear-button" class="text-button" type="button">Vaciar cesta</button>
+      </div>
+      <p id="purchase-template-status" class="camera-status" role="status" aria-live="polite"></p>
+      <div id="purchase-progress" class="purchase-progress" hidden>
+        <strong>Progreso de compra</strong>
+        <span id="purchase-progress-message"></span>
       </div>
 
       <div id="empty-state" class="empty-state">
@@ -221,6 +276,20 @@
           <p id="supermarket-empty" class="supermarket-empty" hidden>Aún no hay productos en la cesta.</p>
         <p id="supermarket-pending" class="supermarket-pending" hidden></p>
       </section>
+    </section>
+
+    <section class="section favorites-section" aria-labelledby="favorites-heading">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">PARA OTRA COMPRA</p>
+          <h2 id="favorites-heading">Favoritos <span id="favorites-count" class="count">0</span></h2>
+        </div>
+      </div>
+      <div id="favorites-empty" class="empty-state">
+        <p>Aún no tienes favoritos.</p>
+        <span class="muted">Guarda productos de la cesta para añadirlos rápidamente.</span>
+      </div>
+      <ul id="favorite-list" class="favorite-list" aria-label="Productos favoritos"></ul>
     </section>
 
     <p class="footnote">Los precios son orientativos y se guardan solo en este navegador.</p>
@@ -346,5 +415,41 @@
 
   <footer>Súper Cesta <span aria-hidden="true">·</span> Compara y compra con cabeza.</footer>
   </div>
+
+  <dialog id="tutorial-dialog" class="tutorial-dialog" aria-labelledby="tutorial-title">
+    <div class="tutorial-window">
+      <div class="tutorial-topline">
+        <span class="tutorial-brand">SÚPER CESTA <span id="tutorial-step-count">01 / 03</span></span>
+        <button id="tutorial-close" class="tutorial-close" type="button" aria-label="Cerrar tutorial">×</button>
+      </div>
+      <div id="tutorial-demo" class="tutorial-demo step-budget" aria-hidden="true">
+        <div class="tutorial-demo-top"><span>Mi compra</span><span id="tutorial-demo-index">01 / 03</span></div>
+        <div class="tutorial-demo-budget">
+          <span>Presupuesto</span>
+          <strong id="tutorial-demo-budget-value">50 €</strong>
+          <div class="tutorial-demo-progress"><span></span></div>
+        </div>
+        <div class="tutorial-demo-product">
+          <span id="tutorial-demo-check" class="tutorial-demo-check"></span>
+          <span class="tutorial-demo-product-copy"><strong id="tutorial-demo-product-name">Tu límite de gasto</strong><small id="tutorial-demo-product-detail">Lo puedes cambiar cuando quieras</small></span>
+          <strong id="tutorial-demo-product-price" class="tutorial-demo-price">50 €</strong>
+        </div>
+        <span id="tutorial-demo-focus" class="tutorial-demo-focus">01</span>
+      </div>
+      <div class="tutorial-copy" aria-live="polite">
+        <p id="tutorial-kicker" class="eyebrow">PASO 1 · ORGANIZA</p>
+        <h2 id="tutorial-title">Define tu presupuesto</h2>
+        <p id="tutorial-description">Pon un límite de gasto y consulta el subtotal mientras preparas la cesta.</p>
+      </div>
+      <div class="tutorial-progress" role="progressbar" aria-label="Progreso del tutorial" aria-valuemin="1" aria-valuemax="3" aria-valuenow="1">
+        <span id="tutorial-progress-bar"></span>
+      </div>
+      <div class="tutorial-actions">
+        <button id="tutorial-back" class="text-button" type="button" disabled>Anterior</button>
+        <button id="tutorial-skip" class="text-button tutorial-skip" type="button">Saltar</button>
+        <button id="tutorial-next" class="primary-button tutorial-next" type="button">Siguiente</button>
+      </div>
+    </div>
+  </dialog>
 </body>
 </html>

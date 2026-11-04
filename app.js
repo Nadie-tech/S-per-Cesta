@@ -10,11 +10,22 @@ const nameInput = document.getElementById("product-name");
 const priceInput = document.getElementById("product-price");
 const quantityInput = document.getElementById("product-quantity");
 const supermarketInput = document.getElementById("product-supermarket");
+const priceObservedDateInput = document.getElementById("price-observed-date");
+const priceTypeInput = document.getElementById("price-type");
 
 const productList = document.getElementById("product-list");
 const emptyState = document.getElementById("empty-state");
 const itemCount = document.getElementById("item-count");
 const clearButton = document.getElementById("clear-button");
+const shoppingModeToggle = document.getElementById("shopping-mode");
+const purchaseProgress = document.getElementById("purchase-progress");
+const purchaseProgressMessage = document.getElementById("purchase-progress-message");
+const saveLastPurchaseButton = document.getElementById("save-last-purchase");
+const repeatLastPurchaseButton = document.getElementById("repeat-last-purchase");
+const purchaseTemplateStatus = document.getElementById("purchase-template-status");
+const favoriteList = document.getElementById("favorite-list");
+const favoritesEmpty = document.getElementById("favorites-empty");
+const favoritesCount = document.getElementById("favorites-count");
 const supermarketSummary = document.getElementById("supermarket-summary");
 const supermarketTotals = document.getElementById("supermarket-totals");
 const supermarketEmpty = document.getElementById("supermarket-empty");
@@ -23,6 +34,7 @@ const cameraView = document.getElementById("camera-view");
 const cameraPreview = document.getElementById("camera-preview");
 const barcodeFrame = document.getElementById("barcode-frame");
 const barcodeFrameMessage = document.getElementById("barcode-frame-message");
+const labelFrame = document.getElementById("label-frame");
 const cancelScanButton = document.getElementById("cancel-scan");
 const scanAgainButton = document.getElementById("scan-again");
 const productLoading = document.getElementById("product-loading");
@@ -43,9 +55,13 @@ const capturePriceLabelButton = document.getElementById("capture-price-label");
 const labelCameraActions = document.getElementById("label-camera-actions");
 const takePricePhotoButton = document.getElementById("take-price-photo");
 const cancelPriceCameraButton = document.getElementById("cancel-price-camera");
+const toggleTorchButton = document.getElementById("toggle-torch");
 const pricePhotoCanvas = document.getElementById("price-photo-canvas");
 const pricePhotoReview = document.getElementById("price-photo-review");
+const priceCropEditor = document.getElementById("price-crop-editor");
 const pricePhotoPreview = document.getElementById("price-photo-preview");
+const priceCropSelection = document.getElementById("price-crop-selection");
+const resetPriceCropButton = document.getElementById("reset-price-crop");
 const readPriceLabelButton = document.getElementById("read-price-label");
 const retakePricePhotoButton = document.getElementById("retake-price-photo");
 const discardPricePhotoButton = document.getElementById("discard-price-photo");
@@ -58,6 +74,27 @@ const enterAppButton = document.getElementById("enter-app");
 const appShell = document.getElementById("app-shell");
 const menuToggle = document.getElementById("menu-toggle");
 const appMenu = document.getElementById("app-menu");
+const themeToggle = document.getElementById("theme-toggle");
+const openTutorialButton = document.getElementById("open-tutorial");
+const tutorialDialog = document.getElementById("tutorial-dialog");
+const tutorialCloseButton = document.getElementById("tutorial-close");
+const tutorialBackButton = document.getElementById("tutorial-back");
+const tutorialNextButton = document.getElementById("tutorial-next");
+const tutorialSkipButton = document.getElementById("tutorial-skip");
+const tutorialStepCount = document.getElementById("tutorial-step-count");
+const tutorialDemoIndex = document.getElementById("tutorial-demo-index");
+const tutorialDemo = document.getElementById("tutorial-demo");
+const tutorialDemoBudget = document.getElementById("tutorial-demo-budget-value");
+const tutorialDemoProductName = document.getElementById("tutorial-demo-product-name");
+const tutorialDemoProductDetail = document.getElementById("tutorial-demo-product-detail");
+const tutorialDemoProductPrice = document.getElementById("tutorial-demo-product-price");
+const tutorialDemoCheck = document.getElementById("tutorial-demo-check");
+const tutorialDemoFocus = document.getElementById("tutorial-demo-focus");
+const tutorialKicker = document.getElementById("tutorial-kicker");
+const tutorialTitle = document.getElementById("tutorial-title");
+const tutorialDescription = document.getElementById("tutorial-description");
+const tutorialProgress = tutorialDialog.querySelector(".tutorial-progress");
+const tutorialProgressBar = document.getElementById("tutorial-progress-bar");
 const basketView = document.getElementById("basket-view");
 const forumView = document.getElementById("forum-view");
 const policiesView = document.getElementById("policies-view");
@@ -85,11 +122,56 @@ let scannedProduct = null;
 let labelCameraStream = null;
 let priceLabelUsingScannerCamera = false;
 let capturedPricePhoto = "";
+let priceCropSelectionRect = null;
+let cropDragStart = null;
+let torchTrack = null;
+let torchEnabled = false;
 let ocrWorker = null;
 let ocrWorkerPromise = null;
 let ocrSuggestedPrice = null;
 let priceFromLabel = false;
 let forumPreviewUrl = "";
+let tutorialStepIndex = 0;
+let activeTheme = "light";
+
+const tutorialSteps = [
+  {
+    kicker: "PASO 1 · ORGANIZA",
+    title: "Define tu presupuesto",
+    description: "Pon un límite de gasto y consulta el subtotal mientras preparas la cesta.",
+    demoClass: "step-budget",
+    budget: "50 €",
+    name: "Tu límite de gasto",
+    detail: "Lo puedes cambiar cuando quieras",
+    price: "50 €",
+    checked: false,
+    focus: "01"
+  },
+  {
+    kicker: "PASO 2 · AÑADE",
+    title: "Añade productos en segundos",
+    description: "Escribe el nombre y la cantidad. El precio y el supermercado son opcionales; también puedes escanear un código.",
+    demoClass: "step-add",
+    budget: "48,75 €",
+    name: "Leche semidesnatada",
+    detail: "2 unidades · Precio opcional",
+    price: "1,25 €",
+    checked: false,
+    focus: "02"
+  },
+  {
+    kicker: "PASO 3 · COMPRA",
+    title: "Controla lo que ya llevas",
+    description: "Activa Modo compra para agrupar la lista, marcar artículos y ver el subtotal comprado.",
+    demoClass: "step-shop",
+    budget: "46,25 €",
+    name: "Leche semidesnatada",
+    detail: "Añadida a la cesta",
+    price: "✓",
+    checked: true,
+    focus: "03"
+  }
+];
 
 const priceSourceLabels = {
   label: "Etiqueta de tienda",
@@ -145,8 +227,25 @@ products = products.filter(product =>
   Number.isSafeInteger(product.quantity) &&
   product.quantity >= 1
 );
+products.forEach(product => {
+  product.purchased = Boolean(product.purchased);
+  if (!["regular", "offer", "loyalty"].includes(product.priceType)) product.priceType = "regular";
+});
+
+let shoppingMode = loadSavedValue("cesta-shopping-mode", false) === true;
+let favorites = loadSavedValue("cesta-favorites", []);
+if (!Array.isArray(favorites)) favorites = [];
+favorites = favorites.filter(product => product && typeof product.name === "string");
+let lastPurchase = loadSavedValue("cesta-last-purchase", []);
+if (!Array.isArray(lastPurchase)) lastPurchase = [];
+lastPurchase = lastPurchase.filter(product => product && typeof product.name === "string");
 
 budgetInput.value = budget;
+priceObservedDateInput.value = "";
+shoppingModeToggle.checked = shoppingMode;
+activeTheme = loadSavedValue("cesta-theme", "light");
+if (activeTheme !== "dark") activeTheme = "light";
+applyTheme(activeTheme, false);
 
 function money(value) {
   return value.toLocaleString("es-ES", {
@@ -161,14 +260,105 @@ function formatObservedDate(value) {
   return Number.isNaN(date.getTime()) ? "Fecha no indicada" : date.toLocaleDateString("es-ES");
 }
 
+function getLocalDateString() {
+  return new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
+function applyTheme(theme, persist = true) {
+  activeTheme = theme === "dark" ? "dark" : "light";
+  document.documentElement.dataset.theme = activeTheme;
+  themeToggle.checked = activeTheme === "dark";
+  themeToggle.setAttribute("aria-label", activeTheme === "dark" ? "Activar modo claro" : "Activar modo oscuro");
+  const themeColor = document.querySelector('meta[name="theme-color"]');
+  themeColor.content = activeTheme === "dark" ? "#111713" : "#087b4e";
+  if (persist) {
+    try {
+      localStorage.setItem("cesta-theme", JSON.stringify(activeTheme));
+    } catch {
+      purchaseTemplateStatus.textContent = "El tema se aplicará solo durante esta sesión.";
+    }
+  }
+}
+
+function renderTutorialStep() {
+  const step = tutorialSteps[tutorialStepIndex];
+  const stepNumber = String(tutorialStepIndex + 1).padStart(2, "0");
+  tutorialStepCount.textContent = `${stepNumber} / 03`;
+  tutorialDemoIndex.textContent = `${stepNumber} / 03`;
+  tutorialDemo.className = `tutorial-demo ${step.demoClass}`;
+  tutorialDemoBudget.textContent = step.budget;
+  tutorialDemoProductName.textContent = step.name;
+  tutorialDemoProductDetail.textContent = step.detail;
+  tutorialDemoProductPrice.textContent = step.price;
+  tutorialDemoCheck.textContent = step.checked ? "✓" : "";
+  tutorialDemoFocus.textContent = step.focus;
+  tutorialKicker.textContent = step.kicker;
+  tutorialTitle.textContent = step.title;
+  tutorialDescription.textContent = step.description;
+  tutorialBackButton.disabled = tutorialStepIndex === 0;
+  tutorialNextButton.textContent = tutorialStepIndex === tutorialSteps.length - 1 ? "Empezar" : "Siguiente";
+  tutorialProgress.setAttribute("aria-valuenow", String(tutorialStepIndex + 1));
+  tutorialProgressBar.style.width = `${((tutorialStepIndex + 1) / tutorialSteps.length) * 100}%`;
+}
+
+function hasCompletedTutorial() {
+  return loadSavedValue("cesta-tutorial-completed-v1", false) === true;
+}
+
+function openTutorial() {
+  tutorialStepIndex = 0;
+  renderTutorialStep();
+  if (!tutorialDialog.open) tutorialDialog.showModal();
+}
+
+function finishTutorial() {
+  try {
+    localStorage.setItem("cesta-tutorial-completed-v1", JSON.stringify(true));
+  } catch {
+    // The tutorial can still close if storage is unavailable.
+  }
+  if (tutorialDialog.open) tutorialDialog.close();
+}
+
 function getPriceSourceLabel(source) {
   return priceSourceLabels[source] || "Origen no indicado";
+}
+
+function getPriceTypeLabel(type) {
+  return type === "offer" ? "Oferta" : type === "loyalty" ? "Con tarjeta" : "Precio normal";
+}
+
+function getProductCategory(product) {
+  const text = `${product.category || ""} ${product.name || ""}`
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("es");
+  if (/limpieza|cleaning|deterg|laundry|lavavaj|dishwash|lejia|bleach|suavizante|multiusos|household/.test(text)) return "Limpieza";
+  if (/cosmet|beauty|makeup|perfume|fragrance|desodorante|deodorant|skincare|crema facial|serum|labial/.test(text)) return "Cosmética";
+  if (/higiene|hygiene|toiletr|bano|bath|ducha|shower|champu|shampoo|toothpaste|pasta dental|cepillo|toothbrush|papel hig|compresa|tampon/.test(text)) return "Higiene y baño";
+  if (/aliment|food|beverage|drink|lacte|dairy|fruit|veget|meat|fish|bakery|conserva|snack/.test(text)) return "Alimentación";
+  return "Otros";
+}
+
+function favoriteIdentity(product) {
+  return product.barcode
+    ? `barcode:${product.barcode}`
+    : `${product.name.trim().toLocaleLowerCase("es")}::${(product.supermarket || "").trim().toLocaleLowerCase("es")}`;
+}
+
+function saveFavorites() {
+  try {
+    localStorage.setItem("cesta-favorites", JSON.stringify(favorites));
+  } catch {
+    purchaseTemplateStatus.textContent = "No se pudieron guardar los favoritos en este navegador.";
+  }
 }
 
 function saveData() {
   try {
     localStorage.setItem("cesta-budget", JSON.stringify(budget));
     localStorage.setItem("cesta-products", JSON.stringify(products));
+    localStorage.setItem("cesta-shopping-mode", JSON.stringify(shoppingMode));
   } catch {
     budgetMessage.textContent =
       "No se ha podido guardar la información en este navegador.";
@@ -204,6 +394,7 @@ function enterApp() {
   } catch {
     // La navegación continúa aunque el navegador bloquee el almacenamiento de sesión.
   }
+  if (!hasCompletedTutorial()) openTutorial();
 }
 
 async function compressForumPhoto(file) {
@@ -306,7 +497,29 @@ function renderForum() {
   }
 }
 
+function configureTorch(track) {
+  torchTrack = track || null;
+  torchEnabled = false;
+  const supportsTorch = Boolean(torchTrack?.getCapabilities?.().torch);
+  toggleTorchButton.hidden = !supportsTorch;
+  toggleTorchButton.disabled = false;
+  toggleTorchButton.textContent = "Encender linterna";
+  toggleTorchButton.setAttribute("aria-pressed", "false");
+}
+
+function resetTorchControl() {
+  if (torchEnabled && torchTrack) {
+    torchTrack.applyConstraints({ advanced: [{ torch: false }] }).catch(() => {});
+  }
+  torchEnabled = false;
+  torchTrack = null;
+  toggleTorchButton.hidden = true;
+  toggleTorchButton.textContent = "Encender linterna";
+  toggleTorchButton.setAttribute("aria-pressed", "false");
+}
+
 function stopCamera() {
+  resetTorchControl();
   scannerSession += 1;
   if (barcodeControls) {
     barcodeControls.stop();
@@ -323,6 +536,7 @@ function stopCamera() {
   cameraView.hidden = true;
   cameraView.classList.remove("reviewing-label");
   barcodeFrame.hidden = false;
+  labelFrame.hidden = true;
   labelCameraActions.hidden = true;
   barcodeFrame.classList.remove("is-detected");
   barcodeFrame.classList.add("is-searching");
@@ -335,11 +549,13 @@ function stopCamera() {
 
 function resumeBarcodeScanning(message = "Cámara activa. Enfoca el siguiente producto.", hideResult = true) {
   if (!barcodeCameraActive || !barcodeControls) return;
+  resetTorchControl();
   priceLabelUsingScannerCamera = false;
   barcodeReadActive = true;
   cameraView.hidden = false;
   cameraView.classList.remove("reviewing-label");
   barcodeFrame.hidden = false;
+  labelFrame.hidden = true;
   barcodeFrame.classList.remove("is-detected");
   barcodeFrame.classList.add("is-searching");
   barcodeFrameMessage.textContent = "Alinea el código dentro del marco";
@@ -584,9 +800,11 @@ async function startPriceLabelCamera() {
   if (reuseScannerCamera) {
     barcodeReadActive = false;
     priceLabelUsingScannerCamera = true;
+    configureTorch(cameraPreview.srcObject?.getVideoTracks?.()[0]);
     cameraView.hidden = false;
     cameraView.classList.remove("reviewing-label");
     barcodeFrame.hidden = true;
+    labelFrame.hidden = false;
     labelCameraActions.hidden = false;
     priceOcrStatus.textContent = "Cámara activa. Centra el nombre y la etiqueta del precio.";
     return;
@@ -598,7 +816,11 @@ async function startPriceLabelCamera() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
-      video: { facingMode: { ideal: "environment" } }
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
+      }
     });
     if (session !== scannerSession) {
       stream.getTracks().forEach(track => track.stop());
@@ -609,8 +831,16 @@ async function startPriceLabelCamera() {
     cameraPreview.srcObject = stream;
     cameraView.hidden = false;
     barcodeFrame.hidden = true;
+    labelFrame.hidden = false;
     labelCameraActions.hidden = false;
     await cameraPreview.play();
+    const videoTrack = stream.getVideoTracks()[0];
+    configureTorch(videoTrack);
+    const capabilities = videoTrack?.getCapabilities?.();
+    const advanced = [];
+    if (capabilities?.focusMode?.includes("continuous")) advanced.push({ focusMode: "continuous" });
+    if (capabilities?.exposureMode?.includes("continuous")) advanced.push({ exposureMode: "continuous" });
+    if (advanced.length > 0) videoTrack.applyConstraints({ advanced }).catch(() => {});
     priceOcrStatus.textContent = "Centra el nombre y la etiqueta del precio en la foto.";
   } catch (error) {
     stopCamera();
@@ -633,12 +863,16 @@ function capturePriceLabelPhoto() {
   pricePhotoCanvas.height = Math.round(height * scale);
   pricePhotoCanvas.getContext("2d").drawImage(cameraPreview, 0, 0, pricePhotoCanvas.width, pricePhotoCanvas.height);
   capturedPricePhoto = pricePhotoCanvas.toDataURL("image/jpeg", 0.9);
+  priceCropSelectionRect = null;
   pricePhotoPreview.src = capturedPricePhoto;
+  updatePriceCropSelection();
   pricePhotoReview.hidden = false;
   priceCandidates.replaceChildren();
   recognizedLabelDetails.hidden = true;
   priceOcrStatus.textContent = "Foto capturada. La imagen se analizará en el dispositivo.";
   labelCameraActions.hidden = true;
+  labelFrame.hidden = true;
+  resetTorchControl();
   if (priceLabelUsingScannerCamera && barcodeCameraActive) {
     cameraView.hidden = false;
     cameraView.classList.add("reviewing-label");
@@ -700,6 +934,145 @@ function chooseLabelPrice(value) {
   priceInput.focus();
 }
 
+async function enhancePriceLabelImage(source) {
+  const image = new Image();
+  await new Promise((resolve, reject) => {
+    image.onload = resolve;
+    image.onerror = reject;
+    image.src = source;
+  });
+
+  const scale = Math.min(1, 2000 / Math.max(image.naturalWidth, image.naturalHeight));
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) throw new Error("No se pudo procesar la foto.");
+
+  context.drawImage(image, 0, 0, width, height);
+  const imageData = context.getImageData(0, 0, width, height);
+  const pixels = imageData.data;
+  const stride = width + 1;
+  const integral = new Uint32Array(stride * (height + 1));
+
+  for (let y = 0; y < height; y += 1) {
+    let rowTotal = 0;
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      const gray = Math.round(pixels[offset] * 0.299 + pixels[offset + 1] * 0.587 + pixels[offset + 2] * 0.114);
+      pixels[offset] = gray;
+      pixels[offset + 1] = gray;
+      pixels[offset + 2] = gray;
+      rowTotal += gray;
+      integral[(y + 1) * stride + x + 1] = integral[y * stride + x + 1] + rowTotal;
+    }
+  }
+
+  const radius = Math.max(10, Math.round(Math.min(width, height) * 0.035));
+  for (let y = 0; y < height; y += 1) {
+    const top = Math.max(0, y - radius);
+    const bottom = Math.min(height - 1, y + radius);
+    for (let x = 0; x < width; x += 1) {
+      const left = Math.max(0, x - radius);
+      const right = Math.min(width - 1, x + radius);
+      const area = (right - left + 1) * (bottom - top + 1);
+      const sum = integral[(bottom + 1) * stride + right + 1]
+        - integral[top * stride + right + 1]
+        - integral[(bottom + 1) * stride + left]
+        + integral[top * stride + left];
+      const localLight = Math.max(45, sum / area);
+      const offset = (y * width + x) * 4;
+      const corrected = Math.min(255, Math.round(pixels[offset] * 210 / localLight));
+      pixels[offset] = corrected;
+      pixels[offset + 1] = corrected;
+      pixels[offset + 2] = corrected;
+    }
+  }
+
+  context.putImageData(imageData, 0, 0);
+  return canvas.toDataURL("image/png");
+}
+
+function updatePriceCropSelection() {
+  priceCropSelection.hidden = !priceCropSelectionRect;
+  if (!priceCropSelectionRect) return;
+  const bounds = pricePhotoPreview.getBoundingClientRect();
+  const imageRatio = pricePhotoPreview.naturalWidth / pricePhotoPreview.naturalHeight;
+  const boundsRatio = bounds.width / bounds.height;
+  let offsetX = 0;
+  let offsetY = 0;
+  let imageWidth = bounds.width;
+  let imageHeight = bounds.height;
+  if (imageRatio < boundsRatio) {
+    imageWidth = bounds.height * imageRatio;
+    offsetX = (bounds.width - imageWidth) / 2;
+  } else {
+    imageHeight = bounds.width / imageRatio;
+    offsetY = (bounds.height - imageHeight) / 2;
+  }
+  priceCropSelection.style.left = `${(offsetX + priceCropSelectionRect.left * imageWidth) / bounds.width * 100}%`;
+  priceCropSelection.style.top = `${(offsetY + priceCropSelectionRect.top * imageHeight) / bounds.height * 100}%`;
+  priceCropSelection.style.width = `${priceCropSelectionRect.width * imageWidth / bounds.width * 100}%`;
+  priceCropSelection.style.height = `${priceCropSelectionRect.height * imageHeight / bounds.height * 100}%`;
+}
+
+function getCropPoint(event) {
+  const bounds = pricePhotoPreview.getBoundingClientRect();
+  if (!bounds.width || !bounds.height) return { x: 0, y: 0 };
+  const imageRatio = pricePhotoPreview.naturalWidth / pricePhotoPreview.naturalHeight;
+  const boundsRatio = bounds.width / bounds.height;
+  let offsetX = 0;
+  let offsetY = 0;
+  let imageWidth = bounds.width;
+  let imageHeight = bounds.height;
+  if (imageRatio < boundsRatio) {
+    imageWidth = bounds.height * imageRatio;
+    offsetX = (bounds.width - imageWidth) / 2;
+  } else {
+    imageHeight = bounds.width / imageRatio;
+    offsetY = (bounds.height - imageHeight) / 2;
+  }
+  return {
+    x: Math.max(0, Math.min(1, (event.clientX - bounds.left - offsetX) / imageWidth)),
+    y: Math.max(0, Math.min(1, (event.clientY - bounds.top - offsetY) / imageHeight))
+  };
+}
+
+function setPriceCrop(start, end) {
+  const left = Math.min(start.x, end.x);
+  const top = Math.min(start.y, end.y);
+  const width = Math.abs(end.x - start.x);
+  const height = Math.abs(end.y - start.y);
+  priceCropSelectionRect = width >= 0.06 && height >= 0.06
+    ? { left, top, width, height }
+    : null;
+  updatePriceCropSelection();
+}
+
+async function getPricePhotoForOcr() {
+  if (!priceCropSelectionRect) return capturedPricePhoto;
+  const image = new Image();
+  await new Promise((resolve, reject) => {
+    image.onload = resolve;
+    image.onerror = reject;
+    image.src = capturedPricePhoto;
+  });
+  const crop = priceCropSelectionRect;
+  const sourceX = Math.round(crop.left * image.naturalWidth);
+  const sourceY = Math.round(crop.top * image.naturalHeight);
+  const sourceWidth = Math.max(1, Math.round(crop.width * image.naturalWidth));
+  const sourceHeight = Math.max(1, Math.round(crop.height * image.naturalHeight));
+  const canvas = document.createElement("canvas");
+  canvas.width = sourceWidth;
+  canvas.height = sourceHeight;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("No se pudo recortar la foto.");
+  context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, sourceWidth, sourceHeight);
+  return canvas.toDataURL("image/png");
+}
+
 async function readPriceLabel() {
   if (!capturedPricePhoto) {
     priceOcrStatus.textContent = "Toma una foto de la etiqueta primero.";
@@ -713,12 +1086,29 @@ async function readPriceLabel() {
   priceOcrStatus.textContent = "Preparando OCR en el dispositivo…";
   try {
     const worker = await getOcrWorker();
-    const { data } = await worker.recognize(capturedPricePhoto);
+    const photoForOcr = await getPricePhotoForOcr();
+    let { data } = await worker.recognize(photoForOcr);
+    let candidates = extractLabelPriceCandidates(data.text || "");
+    if (data.confidence < 78 || candidates.length === 0) {
+      priceOcrStatus.textContent = "Mejorando contraste e iluminación para revisar la lectura…";
+      try {
+        const enhancedPhoto = await enhancePriceLabelImage(photoForOcr);
+        const enhancedData = (await worker.recognize(enhancedPhoto)).data;
+        const enhancedCandidates = extractLabelPriceCandidates(enhancedData.text || "");
+        if (enhancedCandidates.length > candidates.length ||
+          (enhancedCandidates.length === candidates.length && enhancedData.confidence > data.confidence)) {
+          data = enhancedData;
+          candidates = enhancedCandidates;
+        }
+      } catch {
+        priceOcrStatus.textContent = "No se pudo mejorar la imagen; se mantiene la lectura de la foto original.";
+      }
+    }
+
     const text = typeof data.text === "string" ? data.text.trim() : "";
     recognizedLabelText.textContent = text || "No se reconoció texto legible.";
     recognizedLabelDetails.hidden = !text;
 
-    const candidates = extractLabelPriceCandidates(text);
     if (candidates.length === 0) {
       priceOcrStatus.textContent = "No detectamos un precio claro. Puedes escribirlo manualmente.";
       return;
@@ -754,6 +1144,8 @@ function discardPriceLabelPhoto() {
     scanPrice.textContent = "Precio pendiente";
   }
   capturedPricePhoto = "";
+  priceCropSelectionRect = null;
+  updatePriceCropSelection();
   ocrSuggestedPrice = null;
   priceFromLabel = false;
   pricePhotoPreview.removeAttribute("src");
@@ -829,6 +1221,65 @@ function renderSupermarketSummary() {
     : "";
 }
 
+function renderFavorites() {
+  favoritesCount.textContent = String(favorites.length);
+  favoritesEmpty.hidden = favorites.length > 0;
+  favoriteList.replaceChildren();
+
+  for (const favorite of favorites) {
+    const item = document.createElement("li");
+    item.className = "favorite-item";
+    const details = document.createElement("div");
+    details.className = "favorite-details";
+    const name = document.createElement("strong");
+    name.textContent = favorite.name;
+    const note = document.createElement("span");
+    const priceText = Number.isFinite(favorite.price) ? money(favorite.price) : "Precio pendiente";
+    note.textContent = `${priceText} · ${favorite.supermarket || "Sin supermercado"}`;
+    details.append(name, note);
+
+    const actions = document.createElement("div");
+    actions.className = "favorite-actions";
+    const addButton = document.createElement("button");
+    addButton.type = "button";
+    addButton.className = "favorite-add-button";
+    addButton.textContent = "Añadir";
+    addButton.setAttribute("aria-label", `Añadir ${favorite.name} a la cesta`);
+    addButton.addEventListener("click", () => {
+      products.push({ ...favorite, purchased: false });
+      saveData();
+      render();
+    });
+
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.className = "favorite-remove-button";
+    removeButton.textContent = "Quitar";
+    removeButton.setAttribute("aria-label", `Quitar ${favorite.name} de favoritos`);
+    removeButton.addEventListener("click", () => {
+      favorites = favorites.filter(item => favoriteIdentity(item) !== favoriteIdentity(favorite));
+      saveFavorites();
+      renderFavorites();
+      render();
+    });
+    actions.append(addButton, removeButton);
+    item.append(details, actions);
+    favoriteList.append(item);
+  }
+}
+
+function toggleFavorite(product) {
+  const identity = favoriteIdentity(product);
+  const existingIndex = favorites.findIndex(item => favoriteIdentity(item) === identity);
+  if (existingIndex >= 0) {
+    favorites.splice(existingIndex, 1);
+  } else {
+    favorites.push({ ...product, purchased: false });
+  }
+  saveFavorites();
+  render();
+}
+
 function render() {
   const total = calculateTotal();
   const pendingPriceCount = products.filter(product => !Number.isFinite(product.price)).length;
@@ -867,18 +1318,94 @@ function render() {
 
   productList.replaceChildren();
   emptyState.hidden = products.length > 0;
+  const purchasedUnits = products.reduce((sum, product) => sum + (product.purchased ? product.quantity : 0), 0);
+  const purchasedTotal = products.reduce((sum, product) =>
+    sum + (product.purchased && Number.isFinite(product.price) ? product.price * product.quantity : 0), 0);
+  const purchasedPending = products.filter(product => product.purchased && !Number.isFinite(product.price)).length;
+  purchaseProgress.hidden = !shoppingMode || products.length === 0;
 
   const units = products.reduce(
     (sum, product) => sum + product.quantity,
     0
   );
+  purchaseProgressMessage.textContent = shoppingMode
+    ? `${purchasedUnits} de ${units} unidades marcadas · Subtotal marcado: ${money(purchasedTotal)}` +
+      (purchasedPending ? ` · ${purchasedPending} con precio pendiente` : "")
+    : "";
 
   itemCount.textContent =
     units + (units === 1 ? " unidad" : " unidades");
 
+  const groupedProducts = new Map();
   products.forEach((product, index) => {
+    const category = shoppingMode ? getProductCategory(product) : "";
+    if (!groupedProducts.has(category)) groupedProducts.set(category, []);
+    groupedProducts.get(category).push({ product, index });
+  });
+
+  for (const [category, entries] of groupedProducts) {
+    if (shoppingMode) {
+      const heading = document.createElement("li");
+      heading.className = "product-category-heading";
+      heading.textContent = category;
+      productList.append(heading);
+    }
+
+    for (const { product, index } of entries) {
     const item = document.createElement("li");
-    item.className = `product-item${product.imageUrl ? " has-image" : ""}`;
+    item.className = `product-item${product.imageUrl ? " has-image" : ""}${shoppingMode && product.purchased ? " is-purchased" : ""}`;
+
+    const topLine = document.createElement("div");
+    topLine.className = "product-topline";
+
+    if (shoppingMode) {
+      const purchasedLabel = document.createElement("label");
+      purchasedLabel.className = "purchased-control";
+      const purchasedInput = document.createElement("input");
+      purchasedInput.type = "checkbox";
+      purchasedInput.checked = product.purchased;
+      purchasedInput.setAttribute("aria-label", `Marcar ${product.name} como comprado`);
+      purchasedInput.addEventListener("change", () => {
+        product.purchased = purchasedInput.checked;
+        saveData();
+        render();
+      });
+      purchasedLabel.append(purchasedInput, document.createTextNode("Comprado"));
+      topLine.append(purchasedLabel);
+    }
+
+    const topActions = document.createElement("div");
+    topActions.className = "product-actions";
+    const favoriteButton = document.createElement("button");
+    favoriteButton.type = "button";
+    favoriteButton.className = "favorite-toggle";
+    const isFavorite = favorites.some(favorite => favoriteIdentity(favorite) === favoriteIdentity(product));
+    favoriteButton.textContent = isFavorite ? "★" : "☆";
+    favoriteButton.title = isFavorite ? "Quitar de favoritos" : "Guardar en favoritos";
+    favoriteButton.setAttribute("aria-label", `${isFavorite ? "Quitar" : "Guardar"} ${product.name} ${isFavorite ? "de" : "en"} favoritos`);
+    favoriteButton.setAttribute("aria-pressed", String(isFavorite));
+    favoriteButton.addEventListener("click", () => toggleFavorite(product));
+    const editButton = document.createElement("button");
+    editButton.type = "button";
+    editButton.className = "product-edit-button";
+    editButton.textContent = "Editar";
+    editButton.setAttribute("aria-expanded", "false");
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "remove-button";
+    remove.textContent = "Eliminar";
+    remove.setAttribute("aria-label", `Eliminar ${product.name}`);
+    remove.addEventListener("click", () => {
+      products.splice(index, 1);
+      saveData();
+      render();
+    });
+    topActions.append(favoriteButton, editButton, remove);
+    topLine.append(topActions);
+
+    const main = document.createElement("div");
+    main.className = "product-main";
 
     const info = document.createElement("div");
     info.className = "product-info";
@@ -890,7 +1417,7 @@ function render() {
       image.alt = product.name ? `Imagen de ${product.name}` : "Imagen del producto";
       image.loading = "lazy";
       image.addEventListener("error", () => image.remove(), { once: true });
-      item.append(image);
+      main.append(image);
     }
 
     const name = document.createElement("strong");
@@ -909,6 +1436,8 @@ function render() {
       detailParts.push(product.priceSource === "label"
         ? "Lectura OCR de etiqueta · revisada"
         : product.priceSource === "verified" ? "Precio verificado" : "Precio introducido por ti");
+      detailParts.push(getPriceTypeLabel(product.priceType));
+      if (product.priceObservedDate) detailParts.push(`Visto el ${formatObservedDate(product.priceObservedDate)}`);
     }
     detail.textContent = detailParts.join(" · ");
 
@@ -916,28 +1445,97 @@ function render() {
     subtotal.className = "product-total";
     subtotal.textContent = hasPrice ? money(product.price * product.quantity) : "";
 
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.className = "remove-button";
-    remove.textContent = "Eliminar";
-    remove.setAttribute(
-      "aria-label",
-      "Eliminar " + product.name
-    );
+    info.append(name, detail);
+    main.append(info, subtotal);
 
-    remove.addEventListener("click", () => {
-      products.splice(index, 1);
+    const editPanel = document.createElement("div");
+    editPanel.className = "product-edit-controls";
+    editPanel.hidden = true;
+    const editFields = document.createElement("div");
+    editFields.className = "product-edit-fields";
+    const makeField = (labelText, inputType, value) => {
+      const label = document.createElement("label");
+      label.textContent = labelText;
+      const input = document.createElement("input");
+      input.type = inputType;
+      input.value = value;
+      if (inputType === "number") {
+        input.min = inputType === "number" && labelText === "Cantidad" ? "1" : "0";
+        input.step = labelText === "Cantidad" ? "1" : "0.01";
+      }
+      label.append(input);
+      editFields.append(label);
+      return input;
+    };
+    const editQuantity = makeField("Cantidad", "number", String(product.quantity));
+    const editPrice = makeField("Precio (€)", "number", Number.isFinite(product.price) ? String(product.price) : "");
+    const editSupermarket = makeField("Supermercado", "text", product.supermarket || "");
+    const editDate = makeField("Fecha del precio", "date", product.priceObservedDate || "");
+    const dealLabel = document.createElement("label");
+    dealLabel.textContent = "Tipo de precio";
+    const editPriceType = document.createElement("select");
+    for (const [value, text] of [["regular", "Normal"], ["offer", "Oferta"], ["loyalty", "Con tarjeta"]]) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = text;
+      editPriceType.append(option);
+    }
+    editPriceType.value = product.priceType || "regular";
+    dealLabel.append(editPriceType);
+    editFields.append(dealLabel);
+
+    const editActions = document.createElement("div");
+    editActions.className = "product-edit-actions";
+    const saveEdit = document.createElement("button");
+    saveEdit.type = "button";
+    saveEdit.className = "secondary-action";
+    saveEdit.textContent = "Guardar cambios";
+    saveEdit.addEventListener("click", () => {
+      const nextQuantity = editQuantity.valueAsNumber;
+      const nextPrice = editPrice.value.trim() === "" ? null : editPrice.valueAsNumber;
+      if (!Number.isSafeInteger(nextQuantity) || nextQuantity < 1 ||
+        (nextPrice !== null && (!Number.isFinite(nextPrice) || nextPrice < 0))) {
+        alert("Revisa la cantidad y el precio antes de guardar.");
+        return;
+      }
+      const priceChanged = nextPrice !== product.price;
+      product.quantity = nextQuantity;
+      product.price = nextPrice === null ? null : Math.round(nextPrice * 100) / 100;
+      product.supermarket = editSupermarket.value.trim();
+      product.priceObservedDate = editDate.value;
+      product.priceType = editPriceType.value;
+      if (priceChanged) {
+        product.priceSource = nextPrice === null ? "pending" : "user";
+        product.priceUpdatedAt = nextPrice === null ? null : new Date().toISOString();
+      }
       saveData();
       render();
     });
+    const cancelEdit = document.createElement("button");
+    cancelEdit.type = "button";
+    cancelEdit.className = "text-button";
+    cancelEdit.textContent = "Cancelar";
+    cancelEdit.addEventListener("click", () => {
+      editPanel.hidden = true;
+      editButton.setAttribute("aria-expanded", "false");
+    });
+    editActions.append(saveEdit, cancelEdit);
+    editPanel.append(editFields, editActions);
+    editButton.addEventListener("click", () => {
+      editPanel.hidden = !editPanel.hidden;
+      editButton.setAttribute("aria-expanded", String(!editPanel.hidden));
+    });
 
-    info.append(name, detail);
-    item.append(info, subtotal, remove);
+    item.append(topLine, main, editPanel);
     productList.append(item);
-  });
+    }
+  }
 
   renderSupermarketSummary();
   clearButton.hidden = products.length === 0;
+  saveLastPurchaseButton.hidden = products.length === 0;
+  repeatLastPurchaseButton.hidden = lastPurchase.length === 0;
+  renderFavorites();
 }
 
 budgetInput.addEventListener("input", () => {
@@ -965,11 +1563,6 @@ productForm.addEventListener("submit", event => {
     return;
   }
 
-  if (!supermarket) {
-    supermarketInput.focus();
-    return;
-  }
-
   if (!Number.isSafeInteger(quantity) || quantity < 1) {
     alert("Las unidades deben ser un número entero mayor que cero.");
     return;
@@ -983,6 +1576,9 @@ productForm.addEventListener("submit", event => {
     price: price === null ? null : Math.round(price * 100) / 100,
     quantity,
     supermarket,
+    priceObservedDate: price === null ? "" : priceObservedDateInput.value,
+    priceType: priceTypeInput.value,
+    purchased: false,
     barcode: scannedProduct?.barcode || "",
     brand: scannedProduct?.brand || "",
     netQuantity: scannedProduct?.quantityDescription || "",
@@ -997,6 +1593,8 @@ productForm.addEventListener("submit", event => {
 
   productForm.reset();
   quantityInput.value = 1;
+  priceObservedDateInput.value = "";
+  priceTypeInput.value = "regular";
   quantityLabel.textContent = "Unidades";
   scannedProduct = null;
   capturedPricePhoto = "";
@@ -1028,11 +1626,48 @@ scanAgainButton.addEventListener("click", () => {
 });
 capturePriceLabelButton.addEventListener("click", startPriceLabelCamera);
 takePricePhotoButton.addEventListener("click", capturePriceLabelPhoto);
+toggleTorchButton.addEventListener("click", async () => {
+  if (!torchTrack) return;
+  const nextTorchState = !torchEnabled;
+  toggleTorchButton.disabled = true;
+  try {
+    await torchTrack.applyConstraints({ advanced: [{ torch: nextTorchState }] });
+    torchEnabled = nextTorchState;
+    toggleTorchButton.textContent = torchEnabled ? "Apagar linterna" : "Encender linterna";
+    toggleTorchButton.setAttribute("aria-pressed", String(torchEnabled));
+    priceOcrStatus.textContent = torchEnabled ? "Linterna encendida." : "Linterna apagada.";
+  } catch {
+    priceOcrStatus.textContent = "Esta cámara no ha podido cambiar el estado de la linterna.";
+  } finally {
+    toggleTorchButton.disabled = false;
+  }
+});
+priceCropEditor.addEventListener("pointerdown", event => {
+  if (!capturedPricePhoto || pricePhotoReview.hidden || event.button > 0) return;
+  cropDragStart = getCropPoint(event);
+  priceCropEditor.setPointerCapture(event.pointerId);
+  event.preventDefault();
+});
+priceCropEditor.addEventListener("pointermove", event => {
+  if (cropDragStart) setPriceCrop(cropDragStart, getCropPoint(event));
+});
+priceCropEditor.addEventListener("pointerup", event => {
+  if (!cropDragStart) return;
+  setPriceCrop(cropDragStart, getCropPoint(event));
+  cropDragStart = null;
+});
+priceCropEditor.addEventListener("pointercancel", () => { cropDragStart = null; });
+resetPriceCropButton.addEventListener("click", () => {
+  cropDragStart = null;
+  priceCropSelectionRect = null;
+  updatePriceCropSelection();
+});
 cancelPriceCameraButton.addEventListener("click", () => {
   if (priceLabelUsingScannerCamera && barcodeCameraActive) {
     labelCameraActions.hidden = true;
     cameraView.classList.remove("reviewing-label");
     barcodeFrame.hidden = false;
+    labelFrame.hidden = true;
     priceLabelUsingScannerCamera = false;
     resumeBarcodeScanning("Foto cancelada. Cámara activa; puedes seguir escaneando.", false);
   } else {
@@ -1043,6 +1678,8 @@ cancelPriceCameraButton.addEventListener("click", () => {
 readPriceLabelButton.addEventListener("click", readPriceLabel);
 retakePricePhotoButton.addEventListener("click", () => {
   capturedPricePhoto = "";
+  priceCropSelectionRect = null;
+  updatePriceCropSelection();
   pricePhotoReview.hidden = true;
   startPriceLabelCamera();
 });
@@ -1072,7 +1709,59 @@ clearButton.addEventListener("click", () => {
   render();
 });
 
+shoppingModeToggle.addEventListener("change", () => {
+  shoppingMode = shoppingModeToggle.checked;
+  saveData();
+  render();
+});
+
+saveLastPurchaseButton.addEventListener("click", () => {
+  if (products.length === 0) return;
+  lastPurchase = products.map(product => ({ ...product, purchased: false }));
+  try {
+    localStorage.setItem("cesta-last-purchase", JSON.stringify(lastPurchase));
+    purchaseTemplateStatus.textContent = "Compra guardada en este dispositivo.";
+  } catch {
+    purchaseTemplateStatus.textContent = "No se pudo guardar la compra en este navegador.";
+  }
+  render();
+});
+
+repeatLastPurchaseButton.addEventListener("click", () => {
+  if (lastPurchase.length === 0) return;
+  products.push(...lastPurchase.map(product => ({ ...product, purchased: false })));
+  saveData();
+  purchaseTemplateStatus.textContent = "Productos de la última compra añadidos a la cesta.";
+  render();
+});
+
 enterAppButton.addEventListener("click", enterApp);
+themeToggle.addEventListener("change", () => applyTheme(themeToggle.checked ? "dark" : "light"));
+openTutorialButton.addEventListener("click", () => {
+  appMenu.hidden = true;
+  menuToggle.setAttribute("aria-expanded", "false");
+  menuToggle.setAttribute("aria-label", "Abrir menú");
+  openTutorial();
+});
+tutorialBackButton.addEventListener("click", () => {
+  if (tutorialStepIndex === 0) return;
+  tutorialStepIndex -= 1;
+  renderTutorialStep();
+});
+tutorialNextButton.addEventListener("click", () => {
+  if (tutorialStepIndex < tutorialSteps.length - 1) {
+    tutorialStepIndex += 1;
+    renderTutorialStep();
+  } else {
+    finishTutorial();
+  }
+});
+tutorialSkipButton.addEventListener("click", finishTutorial);
+tutorialCloseButton.addEventListener("click", finishTutorial);
+tutorialDialog.addEventListener("cancel", event => {
+  event.preventDefault();
+  finishTutorial();
+});
 document.querySelector(".brand").addEventListener("click", event => {
   event.preventDefault();
   showView("basket");
@@ -1190,6 +1879,7 @@ try {
   const hasEntered = sessionStorage.getItem("cesta-clara-entered") === "true";
   welcomeScreen.hidden = hasEntered;
   appShell.hidden = !hasEntered;
+  if (hasEntered && !hasCompletedTutorial()) openTutorial();
 } catch {
   welcomeScreen.hidden = false;
   appShell.hidden = true;
