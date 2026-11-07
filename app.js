@@ -62,6 +62,7 @@ const priceCropEditor = document.getElementById("price-crop-editor");
 const pricePhotoPreview = document.getElementById("price-photo-preview");
 const priceCropSelection = document.getElementById("price-crop-selection");
 const resetPriceCropButton = document.getElementById("reset-price-crop");
+const readLabelCodeButton = document.getElementById("read-label-code");
 const readPriceLabelButton = document.getElementById("read-price-label");
 const retakePricePhotoButton = document.getElementById("retake-price-photo");
 const discardPricePhotoButton = document.getElementById("discard-price-photo");
@@ -572,7 +573,7 @@ function setBarcodeStatus(message, isError = false) {
   barcodeStatus.classList.toggle("error", isError);
 }
 
-async function lookupBarcode(code = barcodeInput.value.trim()) {
+async function lookupBarcode(code = barcodeInput.value.trim(), isShelfLabelCode = false) {
   if (!/^(?:\d{8}|\d{12,14})$/.test(code)) {
     setBarcodeStatus("Introduce un código EAN/UPC válido de 8 a 14 cifras.", true);
     barcodeInput.focus();
@@ -602,7 +603,7 @@ async function lookupBarcode(code = barcodeInput.value.trim()) {
   try {
     for (const catalog of catalogs) {
       const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 8000);
+      const timeoutId = window.setTimeout(() => controller.abort(), isShelfLabelCode ? 1600 : 8000);
       try {
         const url = `https://${catalog.host}/api/v2/product/${encodeURIComponent(code)}.json?fields=${encodeURIComponent(fields)}`;
         const response = await fetch(url, { signal: controller.signal });
@@ -911,11 +912,12 @@ function extractLabelPriceCandidates(text) {
   const expression = /(\d{1,4}[,.]\d{2})\s*(?:€|EUR)?/giu;
   for (const match of text.matchAll(expression)) {
     const start = match.index || 0;
-    const before = text.slice(Math.max(0, start - 12), start);
-    const after = text.slice(start + match[0].length, start + match[0].length + 8);
-    const unitContext = `${before} ${after}`;
-    const context = text.slice(Math.max(0, start - 8), Math.min(text.length, start + match[0].length + 8));
-    if (/\/\s*(?:kg|100\s*g|100g|l|ud)\b|\bpor\s+(?:kg|litro|unidad)|\b(?:kg|100g)\s*\//i.test(unitContext)) continue;
+    const before = text.slice(Math.max(0, start - 36), start);
+    const after = text.slice(start + match[0].length, start + match[0].length + 16);
+    const isUnitPrice = /(?:\b1?\s*(?:kg|kilo|g|100\s*g|100g|l|litro|ml)\s*[:=]\s*|\b(?:por|\/)\s*(?:kg|kilo|g|100\s*g|100g|l|litro|ml|unidad)\s*|€\s*\/\s*(?:kg|l|unidad)\s*)$/i.test(before) ||
+      /^\s*(?:€|eur)?\s*\/\s*(?:kg|kilo|l|litro|unidad)\b/i.test(after);
+    const context = text.slice(Math.max(0, start - 12), Math.min(text.length, start + match[0].length + 16));
+    if (isUnitPrice) continue;
 
     const value = Number(match[1].replace(",", "."));
     if (!Number.isFinite(value) || value < 0 || value > 9999) continue;
@@ -923,6 +925,18 @@ function extractLabelPriceCandidates(text) {
     candidates.push({ value, context: context.replace(/\s+/g, " ").trim() });
   }
   return candidates;
+}
+
+function extractLabelProductName(text) {
+  const ignoredLine = /^(?:\d+(?:[,.]\d+)?\s*(?:kg|kilo|g|mg|l|litro|ml|cl|ud|unidades?)\b|\d+\s*\+\s*(?:mes(?:es)?|anos?)\b|\d+\s*(?:mes(?:es)?|anos?)\b|(?:1\s*)?(?:kg|kilo|l|litro)\s*[:=]|\d{6,}|(?:precio|pvp|oferta|promo(?:cion)?|eur\s*\/\s*(?:kg|l))\b)/i;
+  const lines = text.split(/[\r\n]+/)
+    .map(line => line.replace(/[|_]+/g, " ")
+      .replace(/\b\d+(?:[,.]\d+)?\s*(?:kg|kilo|g|mg|l|litro|ml|cl|ud|unidades?)\b/gi, " ")
+      .replace(/\s+/g, " ").trim())
+    .filter(line => line.length >= 2 && line.length <= 60)
+    .filter(line => !ignoredLine.test(line.normalize("NFD").replace(/[\u0300-\u036f]/g, "")))
+    .filter(line => !/\d{1,4}[,.]\d{2}\s*(?:€|EUR)?/i.test(line));
+  return lines.slice(0, 3).join(" ").replace(/\s+/g, " ").trim().slice(0, 80);
 }
 
 function chooseLabelPrice(value) {
@@ -1106,11 +1120,18 @@ async function readPriceLabel() {
     }
 
     const text = typeof data.text === "string" ? data.text.trim() : "";
+    const productName = extractLabelProductName(text);
+    if (productName && !nameInput.value.trim()) {
+      nameInput.value = productName;
+      if (scannedProduct) scannedProduct.labelName = productName;
+    }
     recognizedLabelText.textContent = text || "No se reconoció texto legible.";
     recognizedLabelDetails.hidden = !text;
 
     if (candidates.length === 0) {
-      priceOcrStatus.textContent = "No detectamos un precio claro. Puedes escribirlo manualmente.";
+      priceOcrStatus.textContent = productName
+        ? `Nombre detectado: ${productName}. No encontramos un precio claro; puedes introducirlo manualmente.`
+        : "No detectamos un precio claro. Puedes escribirlo manualmente.";
       return;
     }
 
@@ -1135,6 +1156,68 @@ async function readPriceLabel() {
     retakePricePhotoButton.disabled = false;
     discardPricePhotoButton.disabled = false;
   }
+}
+
+function parseLabelQrPayload(value) {
+  const text = value.trim();
+  const extractCode = candidate => {
+    const source = String(candidate || "").trim();
+    const pathCode = source.match(/\/01\/(\d{14})(?=\/|$)/i);
+    const aiCode = source.match(/(?:^|[^\d])01\s*(\d{14})(?=[^\d]|$)/);
+    const queryCode = source.match(/[?&](?:gtin|ean|barcode)=(\d{8,14})\b/i);
+    if (pathCode || aiCode || queryCode) return (pathCode || aiCode || queryCode)[1];
+    const digits = source.replace(/\D/g, "");
+    return /^(?:\d{8}|\d{12,14})$/.test(digits) ? digits : "";
+  };
+  try {
+    const data = JSON.parse(text);
+    if (!data || typeof data !== "object") return { code: extractCode(text) };
+    const code = extractCode(data.gtin || data.ean || data.barcode || data.product_code || data.code);
+    const name = String(data.product_name || data.product || data.name || data.description || "").trim();
+    const rawPrice = data.price ?? data.current_price ?? data.sale_price;
+    const priceText = typeof rawPrice === "string" ? rawPrice.replace(/[^\d,.]/g, "").replace(",", ".") : rawPrice;
+    const price = priceText === undefined || priceText === null || priceText === "" ? null : Number(priceText);
+    return { code, name, price: Number.isFinite(price) && price >= 0 ? price : null };
+  } catch {
+    return { code: extractCode(text) };
+  }
+}
+
+async function readLabelCode() {
+  if (!capturedPricePhoto) {
+    priceOcrStatus.textContent = "Toma una foto de la etiqueta primero.";
+    return;
+  }
+
+  readLabelCodeButton.disabled = true;
+  let payload = { code: "", name: "", price: null };
+  try {
+    priceOcrStatus.textContent = "Buscando un código de barras o QR en la foto…";
+    const { BrowserMultiFormatReader } = await import("https://cdn.jsdelivr.net/npm/@zxing/browser@0.2.1/+esm");
+    const reader = new BrowserMultiFormatReader();
+    const result = await reader.decodeFromImageUrl(capturedPricePhoto);
+    payload = parseLabelQrPayload(result.getText());
+    payload.code = payload.code.replace(/\D/g, "");
+  } catch {
+    barcodeStatus.textContent = "No encontramos un código legible; continuamos con el nombre y el precio de la etiqueta.";
+  }
+
+  if (/^(?:\d{8}|\d{12,14})$/.test(payload.code)) {
+    barcodeInput.value = payload.code;
+    await lookupBarcode(payload.code, true);
+  } else if (payload.code) {
+    barcodeStatus.textContent = "Código de etiqueta detectado; no parece un EAN/UPC de catálogo. Continuamos con OCR.";
+  }
+
+  if (payload.name && !nameInput.value.trim()) {
+    nameInput.value = payload.name.slice(0, 80);
+  }
+  if (Number.isFinite(payload.price)) chooseLabelPrice(payload.price);
+  if (!payload.code && !payload.name && !Number.isFinite(payload.price)) {
+    barcodeStatus.textContent = "No encontramos un código QR/EAN legible; continuamos con la lectura visual.";
+  }
+  await readPriceLabel();
+  readLabelCodeButton.disabled = false;
 }
 
 function discardPriceLabelPhoto() {
@@ -1190,16 +1273,71 @@ function renderSupermarketSummary() {
     }
   }
 
-  for (const group of groups.values()) {
+  for (const [groupKey, group] of groups) {
     const item = document.createElement("li");
     item.className = "supermarket-total-row";
 
     const details = document.createElement("div");
     details.className = "supermarket-total-details";
+    const nameLine = document.createElement("div");
+    nameLine.className = "supermarket-total-name-line";
     const name = document.createElement("strong");
     name.className = "supermarket-total-name";
     name.textContent = group.name;
-    details.append(name);
+    const editButton = document.createElement("button");
+    editButton.type = "button";
+    editButton.className = "supermarket-name-edit";
+    editButton.textContent = "Editar";
+    editButton.setAttribute("aria-label", `Editar supermercado ${group.name}`);
+    nameLine.append(name, editButton);
+    details.append(nameLine);
+
+    const editForm = document.createElement("div");
+    editForm.className = "supermarket-name-editor";
+    editForm.hidden = true;
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.maxLength = 60;
+    nameInput.value = group.name === "Sin supermercado" ? "" : group.name;
+    nameInput.placeholder = "Nombre del supermercado";
+    nameInput.setAttribute("aria-label", `Nombre del supermercado para ${group.name}`);
+    const saveButton = document.createElement("button");
+    saveButton.type = "button";
+    saveButton.className = "supermarket-name-save";
+    saveButton.textContent = "Guardar";
+    const cancelButton = document.createElement("button");
+    cancelButton.type = "button";
+    cancelButton.className = "supermarket-name-cancel";
+    cancelButton.textContent = "Cancelar";
+    const saveName = () => {
+      const updatedName = nameInput.value.trim();
+      if (!updatedName) {
+        nameInput.focus();
+        return;
+      }
+      for (const product of products) {
+        const currentName = product.supermarket?.trim() || "Sin supermercado";
+        if (currentName.toLocaleLowerCase("es") === groupKey) product.supermarket = updatedName;
+      }
+      saveData();
+      render();
+    };
+    editButton.addEventListener("click", () => {
+      editForm.hidden = !editForm.hidden;
+      editButton.setAttribute("aria-expanded", String(!editForm.hidden));
+      if (!editForm.hidden) nameInput.focus();
+    });
+    saveButton.addEventListener("click", saveName);
+    cancelButton.addEventListener("click", () => {
+      editForm.hidden = true;
+      editButton.setAttribute("aria-expanded", "false");
+    });
+    nameInput.addEventListener("keydown", event => {
+      if (event.key === "Enter") saveName();
+      if (event.key === "Escape") cancelButton.click();
+    });
+    editForm.append(nameInput, saveButton, cancelButton);
+    details.append(editForm);
 
     if (group.pendingCount > 0) {
       const pending = document.createElement("span");
@@ -1675,6 +1813,7 @@ cancelPriceCameraButton.addEventListener("click", () => {
     priceOcrStatus.textContent = "Cámara cerrada. La foto no se guardó.";
   }
 });
+readLabelCodeButton.addEventListener("click", readLabelCode);
 readPriceLabelButton.addEventListener("click", readPriceLabel);
 retakePricePhotoButton.addEventListener("click", () => {
   capturedPricePhoto = "";
